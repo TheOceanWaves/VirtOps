@@ -35,6 +35,8 @@ python3 scripts/finalize_baseline.py --profile PROFILE.json --accept-reset --dis
 
 通过本机 agent：
 
+恢复后的 Windows 账户密码和 WinRM 证书也回到基线时的状态。若期间修改过它们，用可信 QGA 证据和受限初始凭据重新核对控制端 profile/DPAPI；不要把一次认证失败直接当作恢复失败或再次重置密码。
+
 ```sh
 python3 scripts/host.py reset --profile PROFILE.json --discard
 ```

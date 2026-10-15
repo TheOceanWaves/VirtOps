@@ -30,6 +30,7 @@ class SafetyTests(unittest.TestCase):
         xml=__import__('xml.etree.ElementTree',fromlist=['']).fromstring(domain_xml(p,installing=False))
         self.assertEqual(xml.find('devices/hostdev').get('managed'),'no')
         self.assertEqual(xml.find('devices/hostdev/source/address').get('slot'),'0x00')
+        self.assertGreaterEqual(len(xml.findall("devices/controller[@model='pcie-root-port']")),6)
         p['gpu']['mode']='none'
         with self.assertRaisesRegex(ValueError,'cannot have PCI'):validate(p,new=True)
 

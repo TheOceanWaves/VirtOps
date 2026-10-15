@@ -27,5 +27,3 @@ import-linux 要求 SSH 已有可用的非交互密钥和主机指纹；密码�
 WinRM 是双向请求响应通道：Windows 不能主动越过宿主的出站隔离，但控制端拿到的 stdout、文件和结果可以被一个有外部网络权限的控制端再次转发。因此它是权限边界和操作审计入口，不是物理数据单向闸门。Windows 端 agent 只有 Windows 管理员权限；它没有宿主 SSH、宿主 root 或 libvirt 权限。
 
 当前工具需要 Windows 控制端（PowerShell 5.1 或 Windows 上的 PowerShell 7）。Linux 上的 PowerShell 7 不能直接视作有可用 WSMan。Linux agent 可使用获准的 Windows runner；若要原生 Python/pywinrm，先单独审核依赖、NTLM/HTTPS 及证书 pin 实现，该适配不在现成工具内。不要为此开放 HTTP/Basic，也不要给 Windows 任务 agent 宿主 root 作为替代。
-
-

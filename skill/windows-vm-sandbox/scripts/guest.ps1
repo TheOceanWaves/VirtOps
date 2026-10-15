@@ -179,5 +179,3 @@ try {
         }
     }
 } finally { if ($session) { Remove-PSSession $session -ErrorAction SilentlyContinue } }
-
-

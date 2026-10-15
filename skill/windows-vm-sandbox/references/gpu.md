@@ -24,6 +24,10 @@ GPU 配置放在 profile 的 `gpu` 区域：
 
 `passthrough` 的设备地址必须是管理员明确允许专供 VM、已绑定 `vfio-pci` 且属于完整 IOMMU group 的 PCI 设备。生成 XML 时使用 `hostdev managed=no`，不自动解绑宿主驱动、不抢占模型、不停止服务、不重启主机。若设备仍由 NVIDIA/显示驱动使用，或 IOMMU group 含有不允许直通的其他设备，立即停止并交接影响评估。
 
+profile 使用 `dedicated=true` 记录已明确专供的选择；它不代替真实用户授权。生成器增加 PCIe root ports，但大 BAR 的 GPU 仍需按硬件核验 Above 4G、UEFI、MMIO 窗口和驱动；设备 Code 12 等错误先读硬件资料，不盲改宿主 BIOS/内核。非 GPU 同槽功能或不安全的混合 IOMMU group 会拒绝直通。
+
+技术入口：[libvirt PCI hostdev 定义](https://libvirt.org/formatdomain.html#host-device-assignment)、[NVIDIA 官方 vGPU 文档](https://docs.nvidia.com/vgpu/)。vGPU 选择时查当时版本的准确产品兼容矩阵，不把同系列名称当成支持证明。
+
 ## 检查与授权
 
 ```sh

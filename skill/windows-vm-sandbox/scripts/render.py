@@ -107,6 +107,13 @@ def domain_xml(data, *, installing):
     root.find('os/nvram').set('template', data.get('ovmf_vars') or '/usr/share/OVMF/OVMF_VARS_4M.ms.fd')
     root.find('os/nvram').text = data['root'] + '/vol/state/' + data['name'] + '_VARS.fd'
     devices = root.find('devices')
+    # A GPU can expose display/audio/USB functions. Give each a PCIe root port;
+    # the reference VM only had room for its original virtio devices.
+    next_index=max(int(n.get('index','0')) for n in devices.findall("controller[@type='pci']"))+1
+    for index in range(next_index,next_index+len(data.get('gpu',{}).get('pci_devices',[]))):
+        controller=ET.SubElement(devices,'controller',{'type':'pci','index':str(index),'model':'pcie-root-port'})
+        ET.SubElement(controller,'model',{'name':'pcie-root-port'})
+        ET.SubElement(controller,'target',{'chassis':str(index),'port':hex(0x10+index-1)})
     for pci in data.get('gpu',{}).get('pci_devices',[]):
         domain,bus,slot_function=pci.split(':');slot,function=slot_function.split('.')
         dev=ET.SubElement(devices,'hostdev',{'mode':'subsystem','type':'pci','managed':'no'})
