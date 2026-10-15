@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "gpu": {"mode": "none", "pci_devices": [], "dedicated": false},
+  "name": "winvm01",
+  "uuid": "8cb9f0f6-3d77-4c1c-8d0b-5ab70ac5f201",
+  "root": "/home/vm_run",
+  "ssh": {"host": "192.168.20.5", "user": "friction-kj", "port": 22, "sudo": true, "bind_address": "192.168.20.1"},
+  "resources": {"memory_gib": 128, "host_limit_gib": 140, "vcpus": 96, "storage_gib": 150, "cpu_set": "0-15,24-31,48-55,72-87,96-111,120-127,144-151,168-183"},
+  "network": {"bridge": "winbr01", "subnet": "172.30.61.0/30", "bridge_ip": "172.30.61.1", "guest_ip": "172.30.61.2", "publish_ip": "192.168.20.5", "client_cidr": "192.168.20.0/24", "rdp_port": 13389, "winrm_port": 15986},
+  "windows": {"computer_name": "WINVM01", "admin_user": "vmadmin", "language": "zh-CN", "image_index": 3},
+  "media": {"windows_iso": null, "virtio_iso": null},
+  "credentials": {"mode": "existing", "secret_file": null, "local_clixml": null},
+  "winrm_thumbprint": "D5D77F4B534126F5FDE41E0FDC3F8E9086024B60",
+  "limits": {"root_free_gib": 250, "start_free_gib": 204, "resume_free_gib": 80, "watch_free_gib": 64}
+}

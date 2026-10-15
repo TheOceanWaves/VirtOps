@@ -1,0 +1,26 @@
+{
+  "captured_utc": "2026-10-15T13:55:26.185924+08:00",
+  "layout": "scripts/*.sh and scripts/lib/",
+  "sha256": {
+    "vmctl.py": "d4b9bfef6ee4afd5d24fba1c36b4d8c489503c49b119ccab9b672c5c593febb2",
+    "vm.sh": "86449f16b7b301159ab6e9101359fe5d4dc527b508042b100a2cec132d30d581",
+    "start.sh": "648ab2cbe8c8f733d3019964c1be79c9fdc8dfdd476f520b55f878a38c83c932",
+    "stop.sh": "4ee6df682dbdb9f0f9de082ee8fca612e9ba89213a5d2d27c08944c1d7e62fea",
+    "status.sh": "6f654fc60d8c4ce86a26df827409d5574475806f14529b480bad99efafba3fd7",
+    "logs.sh": "1f2ec3cc90733901c1259dfc3efe2a97faee517e485d36b18cb72f49b1aa19f6",
+    "counters.sh": "60182f4526ff41825a97ade5fbfcc8b63ffb0d0cc32b0f9197c07f8f8e3f08ae",
+    "reset.sh": "76cac8b278fa865c1ce9a15a2e78685adb3c9af79b861f42b0dca1546bdfed7f",
+    "delete.sh": "0969594fec267aa926824a16c6d2ec702409e9505e7e2ad0f7e45dad1bf9cc69",
+    "recreate.sh": "b21c97326ec0b6d76ac931317a4f9b0e17ba7571f1c2ca87ace14b6f9f81efcb",
+    "winvm01_network.py": "df1d0b2a8b207614bb17fb2d8486849fc01cf6e9953495c90fcc3f1341fa0b13",
+    "winvm01_bridge.py": "aec7474959c25912ee5fd67244272febc9ffab5098f64955a411861c2521e9b0",
+    "winvm01_log_collector.py": "29d978f8827a1e10bf2d8a60a548ee27e62ad1557ef55ee640c0d58504d897d4",
+    "winvm01_store_guard.py": "00c857c081b6428902c265df92943f82f6a3c5bd04a3d7f3066a53605757e9ed",
+    "winvm01_qga.py": "e3065001862f461f76c56e198658e3f6874daac2e10b6b644ca2f03069637d5f",
+    "winvm01_recovery.py": "c5e93d2a49d7821bdf11674c306113e13ff12fa7a693bed5e6ebbd319741ce54",
+    "winvm01_c_reset.py": "0817f01ab2388dbab2043ec08c3b930f102e68a1123e7f71f20515f0d2215a7a",
+    "winvm01_reset_context.ps1": "d4c04f5f7e4df359817e631c3dbf16b5c33ee1959463fcdafff9d4401efbfcf3",
+    "winvm01_reset_postboot.ps1": "fd2ca65a6abd9958ead1bd3dc06a1c4959f19396849c82d67735e5aa7fd77e18",
+    "domain.xml": "545c2e1d34d57c5b8ff29eea4500901323155205ad150232e046b2a11f6da433"
+  }
+}

@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Template only. Replace every __...__ placeholder in a private copy before use.
+  Never commit the populated answer file: Windows Setup stores account passwords
+  in clear text in the answer file while it is being used.
+
+  Intended media: Windows 11 Business 26H2 x64, install image index 3 (Pro).
+  The VM disk is expected to be a 150 GiB SATA disk; SATA deliberately keeps
+  Windows Setup independent of VirtIO storage drivers.
+-->
+<unattend xmlns="urn:schemas-microsoft-com:unattend"
+          xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <settings pass="windowsPE">
+    <component name="Microsoft-Windows-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+      <DiskConfiguration>
+        <Disk wcm:action="add">
+          <DiskID>0</DiskID>
+          <WillWipeDisk>true</WillWipeDisk>
+          <CreatePartitions>
+            <CreatePartition wcm:action="add"><Order>1</Order><Type>EFI</Type><Size>260</Size></CreatePartition>
+            <CreatePartition wcm:action="add"><Order>2</Order><Type>MSR</Type><Size>16</Size></CreatePartition>
+            <CreatePartition wcm:action="add"><Order>3</Order><Type>Primary</Type><Extend>true</Extend></CreatePartition>
+          </CreatePartitions>
+          <ModifyPartitions>
+            <ModifyPartition wcm:action="add"><Order>1</Order><PartitionID>1</PartitionID><Format>FAT32</Format><Label>System</Label></ModifyPartition>
+            <ModifyPartition wcm:action="add"><Order>2</Order><PartitionID>3</PartitionID><Format>NTFS</Format><Label>Windows</Label><Letter>C</Letter></ModifyPartition>
+          </ModifyPartitions>
+        </Disk>
+        <WillShowUI>OnError</WillShowUI>
+      </DiskConfiguration>
+      <ImageInstall>
+        <OSImage>
+          <InstallFrom>
+            <MetaData wcm:action="add"><Key>/IMAGE/INDEX</Key><Value>3</Value></MetaData>
+          </InstallFrom>
+          <InstallTo><DiskID>0</DiskID><PartitionID>3</PartitionID></InstallTo>
+          <WillShowUI>OnError</WillShowUI>
+        </OSImage>
+      </ImageInstall>
+      <UserData><AcceptEula>true</AcceptEula></UserData>
+    </component>
+  </settings>
+
+  <settings pass="specialize">
+    <!-- Separate seed ISO only: its root contains VMSEED and remote-windows-provision.ps1.
+         The Microsoft installation ISO remains untouched. -->
+    <component name="Microsoft-Windows-Deployment" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+      <RunSynchronous>
+        <RunSynchronousCommand wcm:action="add">
+          <Order>1</Order><Description>Copy provisioning script from VM seed ISO</Description>
+          <Path>cmd.exe /c for %D in (D E F G H I J K L M N O P Q R S T U V W X Y Z) do @if exist %D:\VMSEED call %D:\bootstrap.cmd</Path>
+          <WillReboot>Never</WillReboot>
+        </RunSynchronousCommand>
+      </RunSynchronous>
+    </component>
+    <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+      <ComputerName>__VM_NAME__</ComputerName>
+      <TimeZone>China Standard Time</TimeZone>
+    </component>
+  </settings>
+
+  <settings pass="oobeSystem">
+    <component name="Microsoft-Windows-International-Core" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+      <InputLocale>zh-CN</InputLocale><SystemLocale>zh-CN</SystemLocale><UILanguage>zh-CN</UILanguage><UserLocale>zh-CN</UserLocale>
+    </component>
+    <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+      <OOBE>
+        <HideEULAPage>true</HideEULAPage><HideOnlineAccountScreens>true</HideOnlineAccountScreens>
+        <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE><ProtectYourPC>3</ProtectYourPC>
+      </OOBE>
+      <UserAccounts>
+        <LocalAccounts>
+          <LocalAccount wcm:action="add"><Name>__BOOTSTRAP_ADMIN_USER__</Name><DisplayName>Provisioning Administrator</DisplayName><Group>Administrators</Group><Password><Value>__BOOTSTRAP_ADMIN_PASSWORD__</Value><PlainText>true</PlainText></Password></LocalAccount>
+        </LocalAccounts>
+      </UserAccounts>
+      <!-- This one automatic sign-in launches the local provisioning script, then the script removes AutoLogon data. -->
+      <AutoLogon><Username>__BOOTSTRAP_ADMIN_USER__</Username><Enabled>true</Enabled><LogonCount>1</LogonCount><Password><Value>__BOOTSTRAP_ADMIN_PASSWORD__</Value><PlainText>true</PlainText></Password></AutoLogon>
+      <FirstLogonCommands>
+        <SynchronousCommand wcm:action="add"><Order>1</Order><Description>Apply offline remote-access baseline</Description><CommandLine>powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File C:\Windows\Setup\Scripts\remote-windows-provision.ps1</CommandLine><RequiresUserInput>false</RequiresUserInput></SynchronousCommand>
+      </FirstLogonCommands>
+    </component>
+  </settings>
+</unattend>

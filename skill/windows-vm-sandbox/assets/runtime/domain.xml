@@ -1,0 +1,236 @@
+<domain type='kvm'>
+  <name>winvm01</name>
+  <uuid>8cb9f0f6-3d77-4c1c-8d0b-5ab70ac5f201</uuid>
+  <memory dumpCore='off' unit='KiB'>134217728</memory>
+  <currentMemory unit='KiB'>134217728</currentMemory>
+  <memtune>
+    <hard_limit unit='KiB'>146800640</hard_limit>
+    <swap_hard_limit unit='KiB'>146800640</swap_hard_limit>
+  </memtune>
+  <memoryBacking>
+    <nosharepages/>
+  </memoryBacking>
+  <vcpu placement='static'>96</vcpu>
+  <cputune>
+    <global_period>100000</global_period>
+    <global_quota>9600000</global_quota>
+    <vcpupin vcpu='0' cpuset='0'/>
+    <vcpupin vcpu='1' cpuset='96'/>
+    <vcpupin vcpu='2' cpuset='1'/>
+    <vcpupin vcpu='3' cpuset='97'/>
+    <vcpupin vcpu='4' cpuset='2'/>
+    <vcpupin vcpu='5' cpuset='98'/>
+    <vcpupin vcpu='6' cpuset='3'/>
+    <vcpupin vcpu='7' cpuset='99'/>
+    <vcpupin vcpu='8' cpuset='4'/>
+    <vcpupin vcpu='9' cpuset='100'/>
+    <vcpupin vcpu='10' cpuset='5'/>
+    <vcpupin vcpu='11' cpuset='101'/>
+    <vcpupin vcpu='12' cpuset='6'/>
+    <vcpupin vcpu='13' cpuset='102'/>
+    <vcpupin vcpu='14' cpuset='7'/>
+    <vcpupin vcpu='15' cpuset='103'/>
+    <vcpupin vcpu='16' cpuset='8'/>
+    <vcpupin vcpu='17' cpuset='104'/>
+    <vcpupin vcpu='18' cpuset='9'/>
+    <vcpupin vcpu='19' cpuset='105'/>
+    <vcpupin vcpu='20' cpuset='10'/>
+    <vcpupin vcpu='21' cpuset='106'/>
+    <vcpupin vcpu='22' cpuset='11'/>
+    <vcpupin vcpu='23' cpuset='107'/>
+    <vcpupin vcpu='24' cpuset='12'/>
+    <vcpupin vcpu='25' cpuset='108'/>
+    <vcpupin vcpu='26' cpuset='13'/>
+    <vcpupin vcpu='27' cpuset='109'/>
+    <vcpupin vcpu='28' cpuset='14'/>
+    <vcpupin vcpu='29' cpuset='110'/>
+    <vcpupin vcpu='30' cpuset='15'/>
+    <vcpupin vcpu='31' cpuset='111'/>
+    <vcpupin vcpu='32' cpuset='24'/>
+    <vcpupin vcpu='33' cpuset='120'/>
+    <vcpupin vcpu='34' cpuset='25'/>
+    <vcpupin vcpu='35' cpuset='121'/>
+    <vcpupin vcpu='36' cpuset='26'/>
+    <vcpupin vcpu='37' cpuset='122'/>
+    <vcpupin vcpu='38' cpuset='27'/>
+    <vcpupin vcpu='39' cpuset='123'/>
+    <vcpupin vcpu='40' cpuset='28'/>
+    <vcpupin vcpu='41' cpuset='124'/>
+    <vcpupin vcpu='42' cpuset='29'/>
+    <vcpupin vcpu='43' cpuset='125'/>
+    <vcpupin vcpu='44' cpuset='30'/>
+    <vcpupin vcpu='45' cpuset='126'/>
+    <vcpupin vcpu='46' cpuset='31'/>
+    <vcpupin vcpu='47' cpuset='127'/>
+    <vcpupin vcpu='48' cpuset='48'/>
+    <vcpupin vcpu='49' cpuset='144'/>
+    <vcpupin vcpu='50' cpuset='49'/>
+    <vcpupin vcpu='51' cpuset='145'/>
+    <vcpupin vcpu='52' cpuset='50'/>
+    <vcpupin vcpu='53' cpuset='146'/>
+    <vcpupin vcpu='54' cpuset='51'/>
+    <vcpupin vcpu='55' cpuset='147'/>
+    <vcpupin vcpu='56' cpuset='52'/>
+    <vcpupin vcpu='57' cpuset='148'/>
+    <vcpupin vcpu='58' cpuset='53'/>
+    <vcpupin vcpu='59' cpuset='149'/>
+    <vcpupin vcpu='60' cpuset='54'/>
+    <vcpupin vcpu='61' cpuset='150'/>
+    <vcpupin vcpu='62' cpuset='55'/>
+    <vcpupin vcpu='63' cpuset='151'/>
+    <vcpupin vcpu='64' cpuset='72'/>
+    <vcpupin vcpu='65' cpuset='168'/>
+    <vcpupin vcpu='66' cpuset='73'/>
+    <vcpupin vcpu='67' cpuset='169'/>
+    <vcpupin vcpu='68' cpuset='74'/>
+    <vcpupin vcpu='69' cpuset='170'/>
+    <vcpupin vcpu='70' cpuset='75'/>
+    <vcpupin vcpu='71' cpuset='171'/>
+    <vcpupin vcpu='72' cpuset='76'/>
+    <vcpupin vcpu='73' cpuset='172'/>
+    <vcpupin vcpu='74' cpuset='77'/>
+    <vcpupin vcpu='75' cpuset='173'/>
+    <vcpupin vcpu='76' cpuset='78'/>
+    <vcpupin vcpu='77' cpuset='174'/>
+    <vcpupin vcpu='78' cpuset='79'/>
+    <vcpupin vcpu='79' cpuset='175'/>
+    <vcpupin vcpu='80' cpuset='80'/>
+    <vcpupin vcpu='81' cpuset='176'/>
+    <vcpupin vcpu='82' cpuset='81'/>
+    <vcpupin vcpu='83' cpuset='177'/>
+    <vcpupin vcpu='84' cpuset='82'/>
+    <vcpupin vcpu='85' cpuset='178'/>
+    <vcpupin vcpu='86' cpuset='83'/>
+    <vcpupin vcpu='87' cpuset='179'/>
+    <vcpupin vcpu='88' cpuset='84'/>
+    <vcpupin vcpu='89' cpuset='180'/>
+    <vcpupin vcpu='90' cpuset='85'/>
+    <vcpupin vcpu='91' cpuset='181'/>
+    <vcpupin vcpu='92' cpuset='86'/>
+    <vcpupin vcpu='93' cpuset='182'/>
+    <vcpupin vcpu='94' cpuset='87'/>
+    <vcpupin vcpu='95' cpuset='183'/>
+    <emulatorpin cpuset='0-15,24-31,48-55,72-87,96-111,120-127,144-151,168-183'/>
+  </cputune>
+  <resource>
+    <partition>/machine/winvm01</partition>
+  </resource>
+  <os firmware='efi'>
+    <type arch='x86_64' machine='pc-q35-8.2'>hvm</type>
+    <firmware>
+      <feature enabled='yes' name='enrolled-keys'/>
+      <feature enabled='yes' name='secure-boot'/>
+    </firmware>
+    <loader readonly='yes' secure='yes' type='pflash'>/usr/share/OVMF/OVMF_CODE_4M.ms.fd</loader>
+    <nvram template='/usr/share/OVMF/OVMF_VARS_4M.ms.fd'>/home/vm_run/vol/state/winvm01_VARS.fd</nvram>
+  </os>
+  <features>
+    <acpi/>
+    <apic/>
+    <hyperv mode='custom'>
+      <relaxed state='on'/>
+      <vapic state='on'/>
+      <spinlocks state='on' retries='8191'/>
+      <vpindex state='on'/>
+      <runtime state='on'/>
+      <synic state='on'/>
+      <stimer state='on'/>
+    </hyperv>
+    <smm state='on'/>
+  </features>
+  <cpu mode='host-passthrough' check='none' migratable='on'>
+    <topology sockets='1' dies='1' cores='48' threads='2'/>
+    <feature policy='require' name='topoext'/>
+  </cpu>
+  <clock offset='utc'>
+    <timer name='hypervclock' present='yes'/>
+  </clock>
+  <on_poweroff>destroy</on_poweroff>
+  <on_reboot>restart</on_reboot>
+  <on_crash>destroy</on_crash>
+  <devices>
+    <emulator>/usr/bin/qemu-system-x86_64</emulator>
+    <disk type='file' device='disk'>
+      <driver name='qemu' type='qcow2' cache='none' io='native' discard='ignore' detect_zeroes='off'/>
+      <source file='/home/vm_run/vol/current.qcow2'/>
+      <target dev='sda' bus='sata'/>
+      <iotune>
+        <total_bytes_sec>104857600</total_bytes_sec>
+        <total_iops_sec>10000</total_iops_sec>
+      </iotune>
+      <boot order='1'/>
+      <address type='drive' controller='0' bus='0' target='0' unit='0'/>
+    </disk>
+    <controller type='sata' index='0'>
+      <address type='pci' domain='0x0000' bus='0x00' slot='0x1f' function='0x2'/>
+    </controller>
+    <controller type='usb' index='0' model='qemu-xhci'>
+      <address type='pci' domain='0x0000' bus='0x02' slot='0x00' function='0x0'/>
+    </controller>
+    <controller type='virtio-serial' index='0'>
+      <address type='pci' domain='0x0000' bus='0x03' slot='0x00' function='0x0'/>
+    </controller>
+    <controller type='pci' index='0' model='pcie-root'/>
+    <controller type='pci' index='1' model='pcie-root-port'>
+      <model name='pcie-root-port'/>
+      <target chassis='1' port='0x10'/>
+      <address type='pci' domain='0x0000' bus='0x00' slot='0x02' function='0x0' multifunction='on'/>
+    </controller>
+    <controller type='pci' index='2' model='pcie-root-port'>
+      <model name='pcie-root-port'/>
+      <target chassis='2' port='0x11'/>
+      <address type='pci' domain='0x0000' bus='0x00' slot='0x02' function='0x1'/>
+    </controller>
+    <controller type='pci' index='3' model='pcie-root-port'>
+      <model name='pcie-root-port'/>
+      <target chassis='3' port='0x12'/>
+      <address type='pci' domain='0x0000' bus='0x00' slot='0x02' function='0x2'/>
+    </controller>
+    <controller type='pci' index='4' model='pcie-root-port'>
+      <model name='pcie-root-port'/>
+      <target chassis='4' port='0x13'/>
+      <address type='pci' domain='0x0000' bus='0x00' slot='0x02' function='0x3'/>
+    </controller>
+    <controller type='pci' index='5' model='pcie-root-port'>
+      <model name='pcie-root-port'/>
+      <target chassis='5' port='0x14'/>
+      <address type='pci' domain='0x0000' bus='0x00' slot='0x02' function='0x4'/>
+    </controller>
+    <interface type='bridge'>
+      <mac address='52:54:00:61:01:01'/>
+      <source bridge='winbr01'/>
+      <model type='virtio'/>
+      <address type='pci' domain='0x0000' bus='0x01' slot='0x00' function='0x0'/>
+    </interface>
+    <channel type='unix'>
+      <target type='virtio' name='org.qemu.guest_agent.0'/>
+      <address type='virtio-serial' controller='0' bus='0' port='1'/>
+    </channel>
+    <input type='tablet' bus='usb'>
+      <address type='usb' bus='0' port='1'/>
+    </input>
+    <input type='keyboard' bus='usb'>
+      <address type='usb' bus='0' port='2'/>
+    </input>
+    <input type='mouse' bus='ps2'/>
+    <input type='keyboard' bus='ps2'/>
+    <tpm model='tpm-crb'>
+      <backend type='emulator' version='2.0' persistent_state='yes'/>
+    </tpm>
+    <graphics type='vnc' socket='/home/vm_run/vol/state/console/vnc.sock'>
+      <listen type='socket' socket='/home/vm_run/vol/state/console/vnc.sock'/>
+    </graphics>
+    <audio id='1' type='none'/>
+    <video>
+      <model type='vga' vram='16384' heads='1' primary='yes'/>
+      <address type='pci' domain='0x0000' bus='0x00' slot='0x01' function='0x0'/>
+    </video>
+    <watchdog model='itco' action='reset'/>
+    <memballoon model='none'/>
+    <rng model='virtio'>
+      <backend model='random'>/dev/urandom</backend>
+      <address type='pci' domain='0x0000' bus='0x04' slot='0x00' function='0x0'/>
+    </rng>
+  </devices>
+</domain>
+
