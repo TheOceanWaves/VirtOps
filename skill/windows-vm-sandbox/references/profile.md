@@ -13,7 +13,7 @@ python3 scripts/profile.py PROFILE.json --new
 | 区域 | 字段 | 含义与规则 |
 |---|---|---|
 | `name`/`uuid`/`host_root`/`root` | 实例名、全局 UUID、宿主公共根和实例目录 | name 为 2–12 位小写 ASCII，必须在同一宿主唯一，并生成唯一的大写 Windows computer name；新建 UUID 必须全新。`host_root` 是同一宿主所有 VM 共用的绝对根（示例 `/home/vm_run`），新实例推荐 `root=HOST_ROOT/instances/<name>`；当前 `/home/vm_run` 作为 legacy root 继续支持。 |
-| `labels` | owner、purpose | 可选的公开目录标签，用于 `status --all` 识别使用者和用途；不能当作权限或安全边界，不得放密码、token 或敏感信息。 |
+| `labels` | owner、purpose | 新建时填写的公开目录标签，用于 `status --all` 识别使用者和用途；旧实例可省略。不能当作权限或安全边界，不得放密码、token 或敏感信息。 |
 | `ssh` | `host`、`user`、`port`、`identity_file`、`bind_address` | 宿主管理入口。优先让用户指定物理或组网地址；先 `inspect`，不把 SSH 失败当作安装失败。 |
 | `resources` | `memory_gib`、`host_limit_gib`、`vcpus`、`storage_gib`、`cpu_set` | Windows 看到的 RAM 固定为 memory；host_limit 至少比 guest 多 2 GiB，给 QEMU 开销；storage 是宿主总预算，创建后不得扩散。CPU set 若填写必须正好匹配 vcpus。GPU 不包含在 CPU 自动分配内，需单独填写 `gpu`。 |
 | `network` | bridge、/30、publish_ip、client_cidr、RDP/WinRM 端口 | 每台 VM 使用独立 /30 和唯一发布端口。client_cidr 是可进入的来源网段。端口必须不同，不能默认为 13389/15986；端口由用户选择，冲突时拒绝，不替用户自动换端口。 |
