@@ -30,6 +30,8 @@ python3 install.py --verify-installed
 
 升级用 `python install.py --upgrade`。安装器只替换自己管理且未被手工修改的旧文件；发现本地修改、未知文件或其他同名 Skill 会停止，避免覆盖。个人 profile、凭据和执行记录应放在工程及已安装 Skill 目录之外。
 
+在本工程根目录升级已有实例时，先运行 `sudo python3 skill/windows-vm-sandbox/scripts/upgrade_runtime.py --profile /root/vm-profile/winvm01.json`。检查返回 ready 且已获得本次维护授权后，加 `--apply` 执行。升级器只替换认可的 wrappers/lib 文件，保留 VM、磁盘、TPM、基线和未知文件，不重启 systemd、不改 XML/网卡/防火墙。当前 `winvm01` 已完成这次运行脚本升级与目录查询验收，VM 未重启；换人重置仍待实际交接验收。
+
 ## 如何使用
 
 用自然语言指定目标，agent 负责读取对应流程并执行已授权步骤：
@@ -37,7 +39,9 @@ python3 install.py --verify-installed
 - “用 `$windows-vm-sandbox` 看看 Linux 主机上的 VM、内存余量和最近异常。”
 - “这是一台只有 Ubuntu 的机器，帮我从零部署 Windows 沙箱。先问我资源、端口和账户，缺镜像就停下来告诉我下载什么。”
 - “新建一台 VM，先让我选 CPU、内存、磁盘总预算、发布端口和 Windows 用户名／密码方式。”
+- “在同一宿主再建一台 VM，先登记唯一名称、owner/purpose、端口和总资源预算，再开始安装。”
 - “把这台 VM 的 Windows C 盘恢复到出厂状态，保留 D 盘。”
+- “把这台已安装的 VM 交给新同事，询问新用户名、密码方式和 D 盘保留/清空，然后复用基线，不重新安装 Windows。”
 - “连接这台 Windows，上传并执行脚本，取回结果文件。”
 - “交接给另一个 agent，只让它操作 Windows，不给它 Linux 宿主管理凭据。”
 
@@ -60,13 +64,15 @@ skill/windows-vm-sandbox/
   agents/openai.yaml            UI 元数据
   references/                   按任务读取的细化步骤与交接契约
   scripts/                      profile 校验、只读盘点、部署生成器、管理和 WinRM 工具
-  assets/runtime/               2026-10-15 当前生效运行脚本快照
+  assets/runtime/               参考运行脚本与待验收增强快照
   assets/templates/             无密码的 Windows 安装模板
   assets/profiles/               profile 示例和字段约束
 tests/                          安装、资源边界、参数化和工具测试
 ```
 
-`assets/runtime` 是经过当前实例验收的参考实现，包含该实例的名称、路径和存储身份；**不能原样复制到新 VM**。初始化生成器必须为新实例重新生成 UUID、存储身份、路径、网络、端口、资源及账户参数。旧的 120/100 GiB 构建器、迁移器、旧盘清理器和镜像层脚本不属于这个工程的部署入口。
+`assets/runtime` 是从当前实例整理出的参考实现，部分基础启停、隔离和恢复逻辑有现场证据；owner 换人、runtime 升级和多 VM catalog 增强仍需现场验收，不能把它描述成整套新功能已在线通过。它包含该实例的名称、路径和存储身份；**不能原样复制到新 VM**。初始化生成器必须为新实例重新生成 UUID、存储身份、路径、网络、端口、资源及账户参数。旧的 120/100 GiB 构建器、迁移器、旧盘清理器和镜像层脚本不属于这个工程的部署入口。
+
+工程本身也包含初始化时生成的用户入口模板。复制到一台全新的 Linux 主机后，会按新 profile 生成该实例自己的 `scripts/`（顶层只放 `start/stop/status/logs/counters/reset/delete/recreate`，公共 `host_root/scripts/status.sh --all` 只读列出所有登记 VM），实现放 `lib/`。同一宿主先在 `host_root/registry/<name>.json` 预留 name、UUID、root、bridge、subnet 和 RDP/WinRM 端口，冲突时返回错误并让用户重新选择。多个 VM 可以共享同一个 publish IP，但 RDP/WinRM 端口必须不同。标签 owner/purpose 只用于人类识别，不是安全边界；公共目录不保存凭据路径或秘密。多 VM 还必须合并 guest RAM、host_limit、磁盘预算和宿主其他任务做总预算；单 VM 限额不能保证整机不 OOM。这些入口具有普适性，但部署器目前针对 Ubuntu 24.04、x86_64、systemd、cgroup v2 和单体 libvirtd；Debian 模块化 libvirt、ARM、不同固件布局和 GPU vGPU 需要先适配并重新验收。复制工程不会迁移旧 VM 数据，也不会免除新主机首次安装 Windows 和建立基线。
 
 ## 资源与隔离含义
 

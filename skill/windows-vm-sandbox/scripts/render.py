@@ -10,6 +10,28 @@ import xml.etree.ElementTree as ET
 ASSETS = Path(__file__).resolve().parents[1] / 'assets'
 GIB = 1024**3
 BASIC = {'start.sh', 'stop.sh', 'status.sh', 'logs.sh', 'counters.sh', 'reset.sh', 'delete.sh', 'recreate.sh'}
+# Keep the rendered runtime a reviewed allowlist.  A stray file dropped into
+# assets/runtime must never become executable on a new host by accident.
+RUNTIME_SOURCES = frozenset({
+    'vm.sh', 'vmctl.py', 'domain.xml',
+    'start.sh', 'stop.sh', 'status.sh', 'logs.sh', 'counters.sh', 'reset.sh',
+    'delete.sh', 'recreate.sh',
+    'winvm01_bridge.py', 'winvm01_network.py', 'winvm01_log_collector.py',
+    'winvm01_store_guard.py', 'winvm01_qga.py', 'winvm01_recovery.py',
+    'winvm01_c_reset.py', 'winvm01_reset_context.ps1',
+    'winvm01_reset_postboot.ps1',
+    # This guest-side helper is deliberately instance-neutral.  It is copied
+    # byte-for-byte; its Windows state root must never inherit host/profile
+    # substitutions from the current reference VM.
+    'owner_apply.ps1', 'owner_verify.ps1',
+    'owner_environment.py', 'maintenance.py', 'instance_registry.py',
+    'admission.py',
+})
+NEUTRAL_RUNTIME_SOURCES = frozenset({
+    'owner_apply.ps1', 'owner_verify.ps1', 'owner_environment.py', 'maintenance.py',
+    'instance_registry.py',
+    'admission.py',
+})
 
 
 def substitutions(data, store_uuid, inode):
@@ -57,10 +79,17 @@ def runtime_files(data, store_uuid, inode):
               'START_ROOT_FREE_MIN': limits['root_free_gib'] * GIB, 'WATCH_MEM_AVAILABLE_MIN': limits['watch_free_gib'] * GIB,
               'PUBLISHED': ((data['network']['rdp_port'], 3389), (data['network']['winrm_port'], 5986))}
     outputs = {}
-    for path in (ASSETS / 'runtime').iterdir():
-        if path.suffix not in {'.py', '.sh', '.ps1'}:
+    runtime_dir = ASSETS / 'runtime'
+    missing = sorted(name for name in RUNTIME_SOURCES if not (runtime_dir / name).is_file())
+    if missing:
+        raise ValueError('runtime source missing: ' + ', '.join(missing))
+    for path in sorted((runtime_dir / name for name in RUNTIME_SOURCES), key=lambda item: item.name):
+        if path.name == 'domain.xml':
+            # The domain is regenerated from the profile below; retaining the
+            # reference XML in the source tree is useful for review only.
             continue
-        text = replace_text(path.read_text(encoding='utf-8-sig'), mapping)
+        source_text = path.read_text(encoding='utf-8-sig')
+        text = source_text if path.name in NEUTRAL_RUNTIME_SOURCES else replace_text(source_text, mapping)
         if path.suffix == '.py':
             # systemd escapes a literal '-' within a slice component.
             text = text.replace('machine-'+data['name']+'.slice', 'machine-'+data['name'].replace('-', r'\\x2d')+'.slice')
@@ -69,7 +98,7 @@ def runtime_files(data, store_uuid, inode):
             for old,new in [('250 GiB',str(limits['root_free_gib'])+' GiB'),('204 GiB',str(limits['start_free_gib'])+' GiB'),('80 GiB',str(limits['resume_free_gib'])+' GiB'),('96-thread',str(resources['vcpus'])+'-thread')]:
                 text=text.replace(old,new)
             compile(text, path.name, 'exec')
-        name = replace_text(path.name, mapping)
+        name = path.name if path.name in NEUTRAL_RUNTIME_SOURCES else replace_text(path.name, mapping)
         directory = 'scripts' if path.name in BASIC else 'scripts/lib'
         outputs[directory + '/' + name] = text
     return outputs

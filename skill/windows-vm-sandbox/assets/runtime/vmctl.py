@@ -329,7 +329,31 @@ def verify_running_cgroup() -> dict[str, Any]:
     return values
 
 
-def start_locked(*, recovery_validation: bool = False) -> dict[str, Any]:
+def instance_config() -> dict[str, Any]:
+    path = STORE.parent / 'instance.json'
+    require_root_helper(path)
+    data = json.loads(path.read_text())
+    if data.get('name') != VM or data.get('uuid') != DOMAIN_UUID or data.get('root') != str(STORE.parent):
+        raise ControllerError('Installed instance configuration identity mismatch')
+    return data
+
+
+def owner_pending() -> bool:
+    import maintenance
+    return maintenance.active(STORE / 'recovery/owner-transition.json')
+
+
+def start_locked(*, recovery_validation: bool = False, owner_validation: bool = False) -> dict[str, Any]:
+    import admission
+    data = instance_config()
+    with admission.lock(data['host_root']):
+        admission.check(data['host_root'], data)
+        return _start_admitted(recovery_validation=recovery_validation, owner_validation=owner_validation)
+
+
+def _start_admitted(*, recovery_validation: bool = False, owner_validation: bool = False) -> dict[str, Any]:
+    if owner_pending() and not owner_validation:
+        raise ControllerError('Owner recovery is pending; resume the same reset request')
     marker = STORE / 'recovery/c-reset-in-progress.json'
     if marker.exists():
         require_root_helper(marker)
@@ -355,6 +379,8 @@ def start_locked(*, recovery_validation: bool = False) -> dict[str, Any]:
 
 def start() -> dict[str, Any]:
     with lifecycle_lock():
+        if owner_pending():
+            raise ControllerError('Owner recovery is pending; ordinary start/resume is blocked')
         if (STORE / 'recovery/c-reset-in-progress.json').exists():
             raise ControllerError('C recovery is pending; ordinary start is blocked')
         state = domstate()
@@ -400,7 +426,7 @@ def stop() -> dict[str, Any]:
         return stop_locked()
 
 
-def reset(discard: bool) -> dict[str, Any]:
+def reset(discard: bool, owner_profile=None, discard_data=False) -> dict[str, Any]:
     if not discard:
         raise ControllerError("reset requires explicit --discard")
     enabled = STORE / 'recovery/reset-enabled.json'
@@ -416,6 +442,9 @@ def reset(discard: bool) -> dict[str, Any]:
     spec = importlib.util.spec_from_file_location('winvm01_recovery', path)
     recovery = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(recovery)
+    if owner_profile or discard_data or owner_pending() or (STORE / 'state/private/owner.json').exists():
+        import owner_environment
+        return owner_environment.reset(sys.modules[__name__], recovery, discard, owner_profile, discard_data)
     return recovery.reset(sys.modules[__name__], discard)
 
 
@@ -434,6 +463,18 @@ def status() -> dict[str, Any]:
         "services": services(),
         "guest_disk": disk_summary(),
     }
+    try:
+        config = instance_config()
+        net = config['network']
+        result['owner'] = config.get('labels', {}).get('owner', '')
+        result['purpose'] = config.get('labels', {}).get('purpose', '')
+        result['admin_user'] = config['windows']['admin_user']
+        result['rdp'] = f"{net['publish_ip']}:{net['rdp_port']}"
+        result['winrm'] = f"https://{net['publish_ip']}:{net['winrm_port']}/wsman"
+        result['resources'] = config['resources']
+        result['owner_recovery_pending'] = owner_pending()
+    except Exception as exc:
+        result['instance_config_error'] = str(exc)
     try:
         result["actual_state"] = domstate()
     except Exception as exc:
@@ -520,6 +561,9 @@ def watch_once() -> None:
         if run(['virsh','dominfo',VM],check=False).returncode:
             return
         try:
+            if owner_pending():
+                pause_for_guard('owner_transition_needs_resume')
+                return
             mount = verify_store_mount()
             if not unit_active("winvm01-log-collector.service"):
                 raise ControllerError("winvm01-log-collector.service inactive")
@@ -557,10 +601,14 @@ def watch() -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ("start", "stop", "status", "logs", "counters", "delete", "recreate"):
+    for name in ("start", "stop", "logs", "counters", "delete", "recreate"):
         sub.add_parser(name)
+    status_parser = sub.add_parser('status')
+    status_parser.add_argument('--all', action='store_true')
     reset_parser = sub.add_parser("reset")
     reset_parser.add_argument("--discard", action="store_true")
+    reset_parser.add_argument('--owner-profile', type=pathlib.Path)
+    reset_parser.add_argument('--discard-data', action='store_true')
     sub.add_parser("watch")
     args = parser.parse_args()
     require_root()
@@ -569,11 +617,17 @@ def main() -> int:
     elif args.command == "stop":
         output = stop()
     elif args.command == "status":
-        output = status()
+        if args.all:
+            import instance_registry
+            output = instance_registry.list_entries(instance_config()['host_root'])
+        else:
+            output = status()
     elif args.command == "reset":
-        output = reset(args.discard)
+        output = reset(args.discard, args.owner_profile, args.discard_data)
     elif args.command == 'delete':
         with lifecycle_lock():
+            if owner_pending():
+                raise ControllerError('Resume the pending owner operation before deleting the VM definition')
             stop_locked()
             xml=run(['virsh','dumpxml','--inactive',VM]).stdout
             import xml.etree.ElementTree as ET
@@ -584,6 +638,8 @@ def main() -> int:
             output={'definition':'deleted','disk_and_D_data':'retained'}
     elif args.command == 'recreate':
         with lifecycle_lock():
+            if owner_pending():
+                raise ControllerError('Resume the pending owner operation before recreating the VM definition')
             if run(['virsh','dominfo',VM],check=False).returncode==0:
                 raise ControllerError('VM already defined; use start')
             verify_store_mount();verify_tpm_bind();verify_current_disk()

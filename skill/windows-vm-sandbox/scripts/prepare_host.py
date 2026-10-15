@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Fresh-instance stages for Ubuntu/Debian KVM. Default/check never installs a VM."""
+"""Fresh-instance stages for the supported Ubuntu/systemd KVM host. Default/check never installs a VM."""
 from __future__ import annotations
 import argparse
 import copy
 import getpass
 import hashlib
+import importlib.util
 import ipaddress
 import json
 import os
@@ -20,6 +21,15 @@ import xml.etree.ElementTree as ET
 
 from profile import load, cpus
 from render import GIB, runtime_files, domain_xml, seed_files
+
+_registry_spec = importlib.util.spec_from_file_location(
+    'virtops_instance_registry',
+    Path(__file__).resolve().parents[1] / 'assets/runtime/instance_registry.py',
+)
+if _registry_spec is None or _registry_spec.loader is None:
+    raise RuntimeError('instance registry helper is unavailable')
+_registry = importlib.util.module_from_spec(_registry_spec)
+_registry_spec.loader.exec_module(_registry)
 
 
 def run(args, *, check=True, timeout=120):
@@ -96,6 +106,28 @@ def media_info(path):
     return {'path':str(source),'bytes':source.stat().st_size,'sha256':digest.hexdigest()}
 
 
+def host_facts(path):
+    """Return the filesystem that will hold the instance root.
+
+    The bounded VM store is created *inside* this filesystem.  Reporting both
+    paths prevents an operator from confusing the 150 GiB instance store with
+    free space on some other mounted volume.
+    """
+    result = run(['findmnt', '--noheadings', '--raw', '--target', str(path),
+                  '--output', 'SOURCE,FSTYPE,TARGET'])
+    fields = result.stdout.strip().split(None, 2)
+    if len(fields) != 3:
+        raise RuntimeError('Unable to identify the instance-root filesystem')
+    stat = os.statvfs(path)
+    return {
+        'instance_root': str(path),
+        'filesystem_source': fields[0],
+        'filesystem_type': fields[1],
+        'mountpoint': fields[2],
+        'free_bytes': stat.f_bavail * stat.f_frsize,
+    }
+
+
 def verify_virtio(path):
     with tempfile.TemporaryDirectory(prefix='virtops-virtio-') as directory:
         run(['mount','-o','loop,ro,nodev,nosuid,noexec',path,directory])
@@ -106,9 +138,20 @@ def verify_virtio(path):
 
 
 def preflight(data):
-    tools = ['virsh', 'qemu-img', 'qemu-nbd', 'qemu-system-x86_64', 'swtpm', 'xorriso', 'wimlib-imagex', 'mkntfs', 'ntfscp', 'ntfslabel', 'iptables-nft', 'ip6tables-nft', 'iptables-nft-save', 'ip', 'ss', 'mount', 'mkfs.ext4', 'systemd-escape', 'journalctl', 'modprobe', 'blockdev', 'fuser']
+    tools = ['virsh', 'qemu-img', 'qemu-nbd', 'qemu-system-x86_64', 'swtpm', 'xorriso', 'wimlib-imagex', 'mkntfs', 'ntfscp', 'ntfslabel', 'iptables-nft', 'ip6tables-nft', 'iptables-nft-save', 'ip', 'ss', 'mount', 'findmnt', 'mkfs.ext4', 'systemd-escape', 'journalctl', 'modprobe', 'blockdev', 'fuser']
     missing = [name for name in tools if not shutil.which(name)]
     if missing: raise RuntimeError('NEEDS_PACKAGES: ' + ', '.join(missing))
+    os_release = {}
+    release_path = Path('/etc/os-release')
+    if release_path.is_file():
+        for line in release_path.read_text(encoding='utf-8', errors='replace').splitlines():
+            if '=' in line:
+                key, value = line.split('=', 1)
+                os_release[key] = value.strip().strip('"')
+    if os_release.get('ID') != 'ubuntu' or not os_release.get('VERSION_ID', '').startswith('24.04'):
+        raise RuntimeError('SUPPORTED_HOST_ONLY: Ubuntu 24.04 with systemd and monolithic libvirtd is supported; inspect/adapt other distributions explicitly')
+    if not Path('/run/systemd/system').is_dir():
+        raise RuntimeError('SUPPORTED_HOST_ONLY: systemd is required for the generated units')
     if not Path('/dev/kvm').exists(): raise RuntimeError('/dev/kvm is absent; verify virtualization support before deployment')
     if not Path('/sys/fs/cgroup/cgroup.controllers').is_file():raise RuntimeError('This runtime requires cgroup v2')
     if run(['systemctl','is-active','libvirtd.service'],check=False).returncode:
@@ -123,7 +166,8 @@ def preflight(data):
     if root.exists() or root.is_symlink():raise RuntimeError('Fresh instance root already exists; inspect partial state or adopt an existing VM, never overwrite it')
     while not ancestor.exists(): ancestor = ancestor.parent
     stat = os.statvfs(ancestor); free = stat.f_bavail * stat.f_frsize
-    if free < (data['resources']['storage_gib'] + data['limits']['root_free_gib']) * GIB: raise RuntimeError('Insufficient space for a fully allocated store and approved host reserve')
+    data['host_facts'] = host_facts(ancestor)
+    if free < (data['resources']['storage_gib'] + data['limits']['root_free_gib']) * GIB: raise RuntimeError('Insufficient space on the instance-root filesystem for a fully allocated store and approved host reserve')
     for key in ('windows_iso', 'virtio_iso'):
         if not Path(data['media'][key]).is_file(): raise RuntimeError('NEEDS_DOWNLOAD: ' + key + ' at ' + data['media'][key])
     pairs=[('/usr/share/OVMF/OVMF_CODE_4M.ms.fd','/usr/share/OVMF/OVMF_VARS_4M.ms.fd'),
@@ -221,6 +265,8 @@ def storage(data):
     if root.exists() or root.is_symlink(): raise RuntimeError('Instance root already exists; inspect partial state, never overwrite or format it')
     for parent in root.parents:
         if parent.is_symlink(): raise RuntimeError('Instance parent is a symlink; use its explicit resolved path')
+        if parent.exists() and (parent.stat().st_uid != 0 or parent.stat().st_mode & 0o022):
+            raise RuntimeError('Instance parent must be root-owned and non-writable by other users: '+str(parent))
     root.mkdir(parents=True, mode=0o755); (root/'.storage').mkdir(mode=0o700); (root/'vol').mkdir(mode=0o755)
     store = root/'.storage'/(data['name']+'.store')
     with store.open('xb') as f: os.posix_fallocate(f.fileno(),0,data['resources']['storage_gib']*GIB);os.fsync(f.fileno())
@@ -243,10 +289,80 @@ def storage(data):
     for name,text in units.items(): write_new(Path('/etc/systemd/system')/name,text)
     write_new(Path('/etc/libvirt/hooks/qemu.d')/('50-'+data['name']+'-guard'),hook,0o755)
     data['store_identity']={'uuid':fs_uuid,'inode':inode}
-    write_new(root/'instance.json',json.dumps(data,indent=2)+'\n')
+    write_new(root/'instance.json',json.dumps(data,indent=2)+'\n',0o600)
     run(['systemctl','daemon-reload']);run(['systemctl','enable',unit_name(root/'vol'),unit_name(tpm)])
     run(['python3',str(root/'scripts/lib'/(data['name']+'_store_guard.py'))])
     return data
+
+
+def reserve_registry(data):
+    """Claim host-wide identity before creating any instance storage.
+
+    A failed storage stage intentionally leaves the reservation in place so a
+    later run cannot silently steal the same ports or subnet from a partial
+    deployment. Cleanup remains an explicit, inspected operation.
+    """
+    root = Path(data['root'])
+    host_root = data.get('host_root')
+    if not host_root:
+        host_root = str(root.parent) if root.name == data['name'] else str(root)
+        data['host_root'] = host_root
+    record = _registry.claim(data)
+    data['registry'] = record
+    return record
+
+
+def install_host_catalog(data):
+    """Install the shared catalog helper alongside the instance scripts.
+
+    This is intentionally fail-closed: an existing foreign status/catalog
+    file is never overwritten during a new VM deployment.
+    """
+    host_root = Path(data['host_root'])
+    if not host_root.is_dir() or host_root.is_symlink():
+        raise RuntimeError('host_root must already be an existing non-symlink directory')
+    current = host_root
+    while True:
+        stat = current.stat()
+        if current.is_symlink() or stat.st_uid != 0 or stat.st_mode & 0o022:
+            raise RuntimeError('host catalog ancestor must be root-owned and non-writable: ' + str(current))
+        if current == current.parent:
+            break
+        current = current.parent
+    scripts = host_root / 'scripts'
+    library = scripts / 'lib'
+    for path in (scripts, library):
+        if path.exists() and (path.is_symlink() or not path.is_dir()):
+            raise RuntimeError('host catalog destination is unsafe: ' + str(path))
+    scripts.mkdir(mode=0o755, exist_ok=True)
+    library.mkdir(mode=0o755, exist_ok=True)
+    for path in (scripts, library):
+        stat = path.stat()
+        if stat.st_uid != 0 or stat.st_mode & 0o022:
+            raise RuntimeError('host catalog directory must be root-owned and non-writable: ' + str(path))
+    source = Path(__file__).resolve().parents[1] / 'assets/runtime/instance_registry.py'
+    write_new(library / 'instance_registry.py', source.read_text(encoding='utf-8'), 0o755)
+    # A shared host catalog has no per-instance vm.sh/vmctl.py.  Its status
+    # entrypoint therefore invokes the neutral registry helper directly.
+    legacy = (library / 'vmctl.py').is_file()
+    status_path = scripts / 'status.sh'
+    if not legacy:
+        write_new(status_path, shared_status_wrapper(), 0o755)
+
+
+def shared_status_wrapper():
+    return '''#!/bin/sh
+set -eu
+script_path=$(readlink -f -- "$0")
+script_dir=$(CDPATH= cd -- "$(dirname -- "$script_path")" && pwd -P)
+host_root=$(dirname -- "$script_dir")
+case "$#" in
+  0) set -- list ;;
+  1) [ "$1" = "--all" ] || { echo "usage: status.sh [--all]" >&2; exit 2; }; set -- list ;;
+  *) echo "usage: status.sh [--all]" >&2; exit 2 ;;
+esac
+exec python3 "$script_dir/lib/instance_registry.py" --host-root "$host_root" "$@"
+'''
 
 
 def seed(data):
@@ -307,6 +423,19 @@ def finish(data):
     qga.call('guest-ping')
     status=json.loads(qga.powershell("@{RDP=(Get-Service TermService).Status.ToString();WinRM=(Get-Service WinRM).Status.ToString();Provisioned=(Test-Path 'C:\\Windows\\Temp\\"+name+"-provision.success')}|ConvertTo-Json -Compress"))
     if status!={'RDP':'Running','WinRM':'Running','Provisioned':True}: raise RuntimeError('Guest configuration not ready; inspect Windows provisioning log through QGA')
+    credential = root/'vol/state/private/credentials.json'
+    if credential.is_symlink() or not credential.is_file() or credential.stat().st_uid != 0 or credential.stat().st_mode & 0o077:
+        raise RuntimeError('Initial credentials.json must be root-owned and mode 0600')
+    values = json.loads(credential.read_text(encoding='utf-8'))
+    if not isinstance(values, dict) or set(values) != {data['windows']['admin_user']} or not isinstance(values[data['windows']['admin_user']], str):
+        raise RuntimeError('Initial credentials.json does not match the selected administrator')
+    owner_path = root/'vol/state/private/owner.json'
+    owner_payload = {'schema_version': 1, 'name': name, 'uuid': data['uuid'],
+                     'admin_user': data['windows']['admin_user'],
+                     'password': values[data['windows']['admin_user']], 'data_policy': 'preserve'}
+    write_new(owner_path, json.dumps(owner_payload, sort_keys=True)+'\n', 0o600)
+    if owner_path.stat().st_mode & 0o077 or owner_path.stat().st_uid != 0:
+        raise RuntimeError('Initial owner.json was not created root-only')
     qga.powershell(r"$w='HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon';Remove-ItemProperty $w -Name DefaultPassword -ErrorAction SilentlyContinue;Set-ItemProperty $w -Name AutoAdminLogon -Value '0';Get-ChildItem C:\Windows\Panther,C:\Windows\Panther\Unattend -Filter '*unattend*.xml' -ErrorAction SilentlyContinue|Remove-Item -Force;Remove-Item C:\Windows\Setup\Scripts\remote-windows-provision.ps1 -ErrorAction SilentlyContinue")
     run([str(root/'scripts/stop.sh')],timeout=150)
     run(['virsh','define','--validate',str(root/'vol'/(name+'.xml'))])
@@ -334,7 +463,9 @@ def main():
     if args.stage=='check' or args.stage=='storage':
         data=preflight(data)
         if args.stage=='check' or not args.apply:
-            print(json.dumps({'status':'plan_ready','name':data['name'],'resources':data['resources'],'gpu':data['gpu_verified'],'image':data['image_verified'],'media':data['media_verified'],'root':data['root'],'next':'storage --apply within the approved deployment plan'},indent=2));return 0
+            print(json.dumps({'status':'plan_ready','name':data['name'],'resources':data['resources'],'gpu':data['gpu_verified'],'image':data['image_verified'],'media':data['media_verified'],'host_facts':data['host_facts'],'root':data['root'],'next':'storage --apply within the approved deployment plan'},indent=2));return 0
+        reserve_registry(data)
+        install_host_catalog(data)
         storage(data)
     else:
         saved=json.loads((Path(data['root'])/'instance.json').read_text())

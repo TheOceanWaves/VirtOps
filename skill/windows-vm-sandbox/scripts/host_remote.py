@@ -1,5 +1,6 @@
 """SSH stdin payload used by host.py; REQUEST is injected as data."""
 import json
+import importlib.util
 import os
 from pathlib import Path
 import shutil
@@ -47,6 +48,18 @@ def main(request):
     if action == 'inspect':
         print(json.dumps(inspect(data), ensure_ascii=False, indent=2))
         return 0
+    if action == 'status' and request.get('all'):
+        host_root = Path(data.get('host_root') or data['root'])
+        helper = host_root / 'scripts/lib/instance_registry.py'
+        if helper.is_symlink() or not helper.is_file():
+            raise RuntimeError('host catalog helper is missing; run fresh initialization catalog stage')
+        spec = importlib.util.spec_from_file_location('instance_registry', helper)
+        if spec is None or spec.loader is None:
+            raise RuntimeError('host catalog helper cannot be loaded')
+        registry = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(registry)
+        print(json.dumps(registry.list_entries(host_root), ensure_ascii=False, indent=2))
+        return 0
     domain = run(['virsh', '--readonly', '-c', 'qemu:///system', 'dumpxml', data['name']], check=False)
     if action == 'recreate':
         xml_path = Path(data['root']) / 'vol' / (data['name'] + '.xml')
@@ -66,6 +79,10 @@ def main(request):
         if not request['discard']:
             raise RuntimeError('C reset requires explicit --discard')
         arguments += ['--discard']
+        if request.get('owner_profile'):
+            arguments += ['--owner-profile', request['owner_profile']]
+        if request.get('discard_data'):
+            arguments += ['--discard-data']
     result = run(arguments, timeout=3700 if action == 'reset' else 150, check=False)
     print(result.stdout, end='')
     if result.stderr:

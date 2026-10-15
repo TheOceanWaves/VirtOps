@@ -12,10 +12,11 @@ python3 scripts/profile.py PROFILE.json --new
 
 | 区域 | 字段 | 含义与规则 |
 |---|---|---|
-| `name`/`uuid`/`root` | 实例名、全局 UUID、实例目录 | name 为 2–12 位小写 ASCII；新建 UUID 必须全新；root 是专用绝对目录，例如 `/home/vm_run`，不能指向共享系统目录。 |
+| `name`/`uuid`/`host_root`/`root` | 实例名、全局 UUID、宿主公共根和实例目录 | name 为 2–12 位小写 ASCII，必须在同一宿主唯一，并生成唯一的大写 Windows computer name；新建 UUID 必须全新。`host_root` 是同一宿主所有 VM 共用的绝对根（示例 `/home/vm_run`），新实例推荐 `root=HOST_ROOT/instances/<name>`；当前 `/home/vm_run` 作为 legacy root 继续支持。 |
+| `labels` | owner、purpose | 可选的公开目录标签，用于 `status --all` 识别使用者和用途；不能当作权限或安全边界，不得放密码、token 或敏感信息。 |
 | `ssh` | `host`、`user`、`port`、`identity_file`、`bind_address` | 宿主管理入口。优先让用户指定物理或组网地址；先 `inspect`，不把 SSH 失败当作安装失败。 |
 | `resources` | `memory_gib`、`host_limit_gib`、`vcpus`、`storage_gib`、`cpu_set` | Windows 看到的 RAM 固定为 memory；host_limit 至少比 guest 多 2 GiB，给 QEMU 开销；storage 是宿主总预算，创建后不得扩散。CPU set 若填写必须正好匹配 vcpus。GPU 不包含在 CPU 自动分配内，需单独填写 `gpu`。 |
-| `network` | bridge、/30、publish_ip、client_cidr、RDP/WinRM 端口 | 每台 VM 使用独立 /30 和唯一发布端口。client_cidr 是可进入的来源网段。端口必须不同，不能默认为 13389/15986。 |
+| `network` | bridge、/30、publish_ip、client_cidr、RDP/WinRM 端口 | 每台 VM 使用独立 /30 和唯一发布端口。client_cidr 是可进入的来源网段。端口必须不同，不能默认为 13389/15986；端口由用户选择，冲突时拒绝，不替用户自动换端口。 |
 | `windows` | computer_name、admin_user、language、image_index | admin_user 是用户明确选择的管理员账户，供 AI 与桌面共用；不要擅自创建 agent/rdesktop。image_index 必须从 ISO 的实际清单中选 Pro/Enterprise 和语言/架构匹配项。 |
 | `credentials` | mode、secret_file、local_clixml | 新建只能 `generate`、`prompt` 或 `file`；existing 仅适用于已存在且已验收的实例。profile 只放凭据路径/句柄；实际私密 `credentials.json` 或 DPAPI CliXML 可在目标 Linux/本机以 0600 保存，不能进入 Git、日志或命令行。 |
 | `media` | windows_iso、virtio_iso | 指向已下载的本地/宿主 ISO；缺失时进入下载交接，不自动拿未知镜像代替。 |
@@ -34,3 +35,11 @@ GPU 选择独立于 CPU/RAM：`none` 使用 CPU/软件图形；整卡 passthroug
 ## 停止点
 
 缺任何资源、端口、网段、ISO、Pro index、GPU 需求/专供卡/共享意愿或凭据提供方式时停止并列出字段。用户可以先下载 ISO，再带回 Linux 文件路径继续；不要把密码要求用户粘贴到聊天中。`media.py` 输出的 index 清单是选择依据，不能默认使用 3。当前 `winvm01` 的 `gpu.mode=none` 只是本案例事实，不是新机默认结论。
+
+## 换使用者 profile
+
+复用已安装 VM 时不要复制完整的新 VM profile。使用 `assets/profiles/owner-rebuild.example.json` 作为 owner profile，只填写现有实例的 `name`/`uuid`、新管理员用户名、凭据句柄和 `data_policy`。它不改变 RAM、vCPU、GPU、网络或端口；这些字段若要改变，必须另走新 profile 的迁移/重建流程。`data_policy=clear` 只有在命令同时带 `--discard-data` 时才生效。
+
+## 同宿主登记
+
+初始化前先读写 `host_root/registry/<name>.json`（目录和登记文件由 root 创建，目录默认 0755、登记内容 root 可写），登记 name、UUID、root、bridge、subnet、RDP/WinRM 端口，即使 VM 还未启动也要占位。publish IP 可以共享，但 RDP/WinRM 端口必须唯一。新 profile 与登记表冲突时必须返回 `NAME_OR_PORT_CONFLICT` 或 `PORT_CONFLICT` 并停下，让用户选择新 name/端口；小模型不得自动猜端口或改 root。公共目录只保存展示所需字段，不保存密码或凭据路径。多台 VM 同时运行还要把各 VM 的 guest RAM、host_limit、磁盘预算和宿主已有任务合并核算；单台 cgroup 上限不能保证整机不 OOM。

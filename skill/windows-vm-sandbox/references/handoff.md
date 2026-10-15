@@ -1,6 +1,8 @@
 
 # 交给另一个 agent 或小模型
 
+交接的是 Windows 操作权，不是宿主生命周期权限。若是换一位 Windows 使用者，请先读 [换使用者并复用 Windows 基线](reprovision.md)；不得让 Windows agent 自己 reset、delete、改资源或改网络。
+
 交接前由人或上层 agent 只提供 profile 路径和本次动作；不要把密码、DPAPI 文件内容、证书私钥或宿主 SSH 命令塞进 prompt。profile 的 `local_clixml` 是凭据句柄，`winrm_thumbprint` 是固定的服务器身份。
 
 推荐按下面的顺序逐步执行，每一步读取 JSON 后再继续：
@@ -19,3 +21,5 @@
 - 网络测试失败时不能为了“排障”开启 Basic、修改 TrustedHosts、取消证书检查、放宽出站防火墙或改变全局执行策略。
 
 每次交接报告只写动作、目标、通过/失败、证据和下一步；绝不写密码、凭据 JSON、完整远端环境变量或不必要的 stdout。运行脚本本身可以写用户要求的产物，但应在 `C:\Work` 下使用专属子目录，并避免删除同事已有文件。
+
+新服务器的入口随工程生成。它们在不同 Linux 主机上只有在完成 profile、依赖、介质、网络和资源验收后才可使用；Skill 的离线检查通过不等于新主机已部署完成。

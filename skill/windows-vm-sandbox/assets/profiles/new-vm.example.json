@@ -2,6 +2,8 @@
   "schema_version": 1,
   "name": null,
   "uuid": null,
+  "labels": {"owner": null, "purpose": null},
+  "host_root": "/home/vm_run",
   "root": null,
   "ssh": {"host": null, "user": null, "port": 22, "sudo": true, "bind_address": null},
   "resources": {"memory_gib": null, "host_limit_gib": null, "vcpus": null, "storage_gib": null, "cpu_set": null},

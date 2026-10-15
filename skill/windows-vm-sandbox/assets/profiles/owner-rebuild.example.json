@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "name": "existing-vm-name",
+  "uuid": "existing-vm-uuid",
+  "admin_user": "selected-admin",
+  "labels": {"owner": "新使用者", "purpose": "Windows agent 沙盒"},
+  "credentials": {
+    "mode": "generate",
+    "secret_file": null
+  },
+  "data_policy": "preserve"
+}

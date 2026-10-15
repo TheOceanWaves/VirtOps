@@ -18,6 +18,8 @@ def profile_for(name="alpha", number=1):
         "gpu": {"mode":"none","pci_devices":[],"dedicated":False},
         "name": name,
         "uuid": f"11111111-1111-4111-8111-{number:012d}",
+        "labels": {"owner": "test-user", "purpose": "test"},
+        "host_root": "/srv",
         "root": f"/srv/{name}",
         "ssh": {"host": "192.0.2.10", "user": "operator", "port": 22, "sudo": True, "bind_address": None},
         "resources": {"memory_gib": 8, "host_limit_gib": 10, "vcpus": 4, "storage_gib": 64, "cpu_set": "0-3"},
@@ -74,6 +76,18 @@ class ProfileValidationTests(unittest.TestCase):
         data = profile_for()
         data["resources"]["host_limit_gib"] = data["resources"]["memory_gib"] + 1
         with self.assertRaisesRegex(ValueError, "overhead"):
+            validate(data, new=True)
+
+    def test_new_profile_requires_instance_root_below_host_root(self):
+        data = profile_for()
+        data['root'] = '/other/alpha'
+        with self.assertRaisesRegex(ValueError, 'inside host_root'):
+            validate(data, new=True)
+
+    def test_new_profile_requires_labels(self):
+        data = profile_for()
+        data['labels']['owner'] = None
+        with self.assertRaisesRegex(ValueError, 'labels.owner'):
             validate(data, new=True)
 
 

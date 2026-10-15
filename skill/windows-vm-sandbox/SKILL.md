@@ -11,7 +11,10 @@ description: 从空 Linux 主机部署和管理隔离的 Windows KVM 虚拟机�
 |---|---|---|
 | 空 Linux 主机首次部署、新建独立 VM | [初始化部署](references/initialize.md) | `scripts/profile.py`、`scripts/prepare_host.py` |
 | 查看、启停、删除后重建定义 | [日常管理](references/operate.md) | `scripts/host.py`，复用目标机器现有脚本 |
+| 查看同宿主全部已登记 VM | [日常管理](references/operate.md) | `host_root/scripts/status.sh --all` |
+| 升级已有实例运行时 | [日常管理](references/operate.md) | `scripts/upgrade_runtime.py`（默认 check，`--apply` 才变更） |
 | 恢复 Windows、保留 D | [重置与基线](references/reset.md) | 目标的 `reset.sh --discard` |
+| 换同事但复用已安装系统 | [换使用者](references/reprovision.md) | `reset.sh --discard --owner-profile ...` |
 | 上传文件、执行代码、下载结果 | [Windows 操作](references/windows-agent.md) | `scripts/guest.ps1` |
 | 交给另一个 agent／小模型 | [交接契约](references/handoff.md) | 限定 Windows 端点、工作目录和凭据句柄 |
 | 失败、RDP 不通、OOM、安装循环 | [排错](references/troubleshooting.md) | 先读证据，最多两次同因重试 |

@@ -1,5 +1,7 @@
 # C 盘重置与基线
 
+如果目的是把已安装的 VM 交给另一位同事，先读 [换使用者并复用 Windows 基线](reprovision.md)。普通 reset 恢复当前 owner；换人必须先收集 owner profile，并明确 D 盘保留或清理。
+
 重置只清 Windows C 盘，保留可验证的 D 盘数据、D 的分区身份和 TPM/NVRAM。它不是 Docker 镜像层，也不是整盘快照。用户未明确允许清 C 时，任何 agent 都必须停下。
 
 ## 首次建立基线
@@ -42,6 +44,16 @@ python3 scripts/host.py reset --profile PROFILE.json --discard
 ```
 
 远端用户入口是 `/home/vm_run/scripts/reset.sh --discard`。controller 会先读取 QGA 上下文并检查 C/D、加密/EFS、GPT 和基线，再正常停机；只在证据完整时进行离线 C 恢复。它会写 recovery marker、做启动后 SYSTEM 验证，成功才清 marker 并返回 `C_reset=verified`、`D_preserved` 等结果。
+
+换人时使用 owner profile：
+
+```sh
+/home/vm_run/scripts/reset.sh --discard --owner-profile /root/private/new-owner.json
+# 仅在用户明确选择清空 D 后：
+/home/vm_run/scripts/reset.sh --discard --owner-profile /root/private/new-owner.json --discard-data
+```
+
+`--discard-data` 是额外的破坏性门槛；没有它，即使 owner profile 写了 `data_policy=clear` 也必须拒绝。owner 应用和认证失败时保持维护阻塞状态，不能恢复旧账号对外可用性。
 
 若中途失败，VM 应保持停止或安全阻塞状态并保留 marker；不要删除 marker、手工启动未验证系统或重复改分区。先读 `logs` 和 recovery JSON，再按失败阶段修复；同一原因不要盲目重试。
 

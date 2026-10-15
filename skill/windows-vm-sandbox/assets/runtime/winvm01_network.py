@@ -44,6 +44,8 @@ import shutil
 import subprocess
 import sys
 import re
+from pathlib import Path
+import maintenance
 from typing import Iterable, Sequence
 
 
@@ -85,8 +87,18 @@ class RuleError(RuntimeError):
     pass
 
 
+def maintenance_active():
+    return maintenance.active(Path(__file__).resolve().parents[2] / 'vol/recovery/owner-transition.json')
+
+
+def maintenance_gate():
+    return maintenance.Gate(VM_NAME, PUBLISHED, FILTER4['forward_to'], FILTER4['output'])
+
+
 def log_rule(route: str) -> list[str]:
     prefix = f"WINVM01 DROP {route} "
+    if len(prefix) > 29:
+        prefix = f"WINVM01 DROP {route.replace('fwd-', '')} "
     if len(prefix) > 29:
         raise RuleError(f"iptables LOG prefix is too long: {prefix!r}")
     return [
@@ -336,6 +348,9 @@ def filter4_specs() -> dict[str, list[list[str]]]:
     specs[FILTER4["forward_from"]].insert(-1, log_rule("fwd-from"))
     specs[FILTER4["forward_to"]].extend([log_rule("fwd-to"), ["-j", "DROP"]])
     specs[FILTER4["output"]].extend([log_rule("output"), ["-j", "DROP"]])
+    if maintenance_active():
+        for key in ('forward_to', 'output'):
+            specs[FILTER4[key]].insert(0, ['-j', maintenance_gate().chain])
     return specs
 
 
@@ -492,6 +507,8 @@ def add_jumps() -> None:
 def apply(backend: str, *, allow_missing_bridge: bool = False, refresh_private: bool = False) -> None:
     require_root()
     check_backend(backend)
+    if maintenance_active():
+        maintenance_gate().install()
     require_bridge(allow_missing=allow_missing_bridge)
     if not forwarding_enabled():
         raise RuleError("IPv4 forwarding is disabled; refusing to change sysctl implicitly")
@@ -514,6 +531,8 @@ def apply(backend: str, *, allow_missing_bridge: bool = False, refresh_private: 
         add_filter_rules()
         add_nat_rules()
     add_jumps()
+    if maintenance_active():
+        maintenance_gate().verify()
 
 
 def remove(backend: str) -> None:
@@ -569,6 +588,8 @@ def preflight() -> dict[str, object]:
 def verify(backend: str) -> None:
     require_root()
     check_backend(backend)
+    if maintenance_active():
+        maintenance_gate().verify()
     checks = [
         (False, "filter", "INPUT", ["-i", BRIDGE, "-j", FILTER4["input"]]),
         (False, "filter", "FORWARD", ["-i", BRIDGE, "-j", FILTER4["forward_from"]]),

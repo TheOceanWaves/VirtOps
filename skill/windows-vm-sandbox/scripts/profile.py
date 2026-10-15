@@ -55,6 +55,25 @@ def validate(data: dict, *, new: bool = False) -> dict:
         raise ValueError('root must be a specific absolute Linux instance directory without spaces or ..')
     if root in {'/var/lib', '/var/lib/libvirt', '/usr/local', '/home/root'}:
         raise ValueError('root is a shared system directory')
+    host_root = required(data, 'host_root') if new or 'host_root' in data else str(PurePosixPath(root).parent)
+    if not re.fullmatch(r'/(?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+', host_root) or '..' in PurePosixPath(host_root).parts:
+        raise ValueError('host_root must be a specific absolute Linux directory without spaces or ..')
+    if host_root in {'/var/lib', '/var/lib/libvirt', '/usr/local', '/home/root'}:
+        raise ValueError('host_root is a shared system directory')
+    try:
+        PurePosixPath(root).relative_to(PurePosixPath(host_root))
+    except ValueError as exc:
+        raise ValueError('instance root must be inside host_root') from exc
+    if new and root == host_root:
+        raise ValueError('new VM root must be a child directory of host_root')
+    labels = data.get('labels', {})
+    if not isinstance(labels, dict):
+        raise ValueError('labels must be an object')
+    for key in ('owner', 'purpose'):
+        if new and not labels.get(key):
+            raise ValueError(f'NEEDS_USER_INPUT: labels.{key}')
+        if labels.get(key) is not None and (not isinstance(labels[key], str) or len(labels[key]) > 128 or '\n' in labels[key] or '\r' in labels[key]):
+            raise ValueError(f'invalid labels.{key}')
     for field in ('host', 'user'):
         if not re.fullmatch(r'[A-Za-z0-9_.:@-]+', required(data, 'ssh.' + field)):
             raise ValueError('invalid SSH identity/host')

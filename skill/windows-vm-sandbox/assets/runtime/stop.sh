@@ -1,3 +1,4 @@
 #!/bin/sh
 set -eu
-exec /home/vm_run/scripts/lib/vm.sh stop "$@"
+script_dir=$(CDPATH= cd -- "$(dirname -- "$(readlink -f -- "$0")")" && pwd -P)
+exec "$script_dir/lib/vm.sh" stop "$@"

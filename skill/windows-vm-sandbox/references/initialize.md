@@ -4,7 +4,7 @@
 
 ## 0. 收集输入并形成 profile
 
-先询问并记录：宿主 SSH 地址/身份；VM 名称和 Windows computer name；Windows 版本、语言和 Pro/Enterprise 目标；固定 RAM、vCPU/CPU set、宿主总磁盘预算；RDP/WinRM 发布 IP、端口和允许来源网段；管理员用户名；密码由本机安全提示输入、随机生成后受限保存，还是用户提供受限文件；VM 是否需要 GPU、哪张卡可专供、是否允许共享、宿主现有模型/显示服务是否占用以及可接受的停机/重启影响。GPU 单独填写 `gpu.mode`（`none`、`passthrough`、`vgpu`），不从 CPU 数量推断。新 VM 默认不继承当前 `winvm01` 的 128 GiB、96 vCPU、150 GiB、端口或 `vmadmin`。
+先询问并记录：宿主 SSH 地址/身份；公共 `host_root`（如 `/home/vm_run`）、唯一 VM 名称、owner/purpose 标签和 Windows computer name；Windows 版本、语言和 Pro/Enterprise 目标；固定 RAM、vCPU/CPU set、宿主总磁盘预算；RDP/WinRM 发布 IP、端口和允许来源网段；管理员用户名；密码由本机安全提示输入、随机生成后受限保存，还是用户提供受限文件；VM 是否需要 GPU、哪张卡可专供、是否允许共享、宿主现有模型/显示服务是否占用以及可接受的停机/重启影响。GPU 单独填写 `gpu.mode`（`none`、`passthrough`、`vgpu`），不从 CPU 数量推断。新 VM 默认不继承当前 `winvm01` 的 128 GiB、96 vCPU、150 GiB、端口或 `vmadmin`。
 
 生成全新 UUID 和专用 root，复制 `assets/profiles/new-vm.example.json`，先填已知字段。index 要先从介质清单确认，不能为通过校验猜填 3；完整 profile 的校验放在第 2 步。UUID 可用 `python3 -c "import uuid;print(uuid.uuid4())"` 生成。完整校验命令为：
 
@@ -12,7 +12,7 @@
 python3 scripts/profile.py PROFILE.json --new
 ```
 
-停止条件：缺输入、密码出现在 profile/命令行、GPU 需求未明确、UUID/root/端口已被其他实例占用、host_limit 小于 guest RAM+2 GiB、start_free 小于 host_limit。修正 profile 后重新校验。
+停止条件：缺输入、密码出现在 profile/命令行、GPU 需求未明确、UUID/name/root/bridge/subnet/端口已在 `host_root/registry/<name>.json` 登记、host_limit 小于 guest RAM+2 GiB、start_free 小于 host_limit。publish IP 可以复用，但 RDP/WinRM 端口不能冲突。冲突时询问用户新的 name 或端口，不自动替换。修正 profile 后重新校验。
 
 ## 1. 先识别宿主依赖，再交接介质
 
@@ -124,6 +124,8 @@ activate 会启用 IPv4 forwarding 并将默认关机行为设为 shutdown，避
 
 ## 新建第二台 VM 与重建定义
 
-新建第二台必须新 profile、新 UUID、新 root、新 bridge /30、新发布端口、新磁盘预算和用户选择的 Windows 管理员/凭据；按本流程从 check 开始，不能 clone `assets/runtime` 或现有 TPM/NVRAM/磁盘。
+工程内的 `start.sh`、`stop.sh`、`status.sh`、`logs.sh`、`counters.sh`、`reset.sh`、`delete.sh` 和 `recreate.sh` 会在初始化时按 profile 生成到该实例的 root；它们和 `lib/` 一起随工程部署，适合迁移到另一台兼容 Linux 主机。入口不应安装为系统全局命令，也不会携带旧实例凭据或磁盘。
+
+新建第二台必须新 profile、新 UUID、新 root、新 bridge /30、新发布端口、新磁盘预算和用户选择的 Windows 管理员/凭据；按本流程从 check 开始，不能 clone `assets/runtime` 或现有 TPM/NVRAM/磁盘。先在公共 `host_root/registry/<name>.json` 预留身份和端口，再创建存储；登记冲突时停下。建议名称可以是 `win-zs-cad`、`win-ls-dev`，仅作示例，不是自动默认值。publish IP 可与其他 VM 共用，但发布端口必须唯一。
 
 若只是定义丢失而磁盘、TPM、NVRAM 和基线仍完整，使用 `host.py recreate --profile PROFILE.json` 恢复定义，随后 `status` 和实际 RDP/WinRM 验收。重建定义不重装系统、不重置 C、不创建镜像层；任何磁盘或基线不一致都停止转入初始化/恢复流程。

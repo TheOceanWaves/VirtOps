@@ -6,6 +6,7 @@ import hashlib
 import json
 import pathlib
 import time
+from contextlib import nullcontext
 
 ROOT = pathlib.Path('/home/vm_run/scripts/lib')
 RECOVERY = pathlib.Path('/home/vm_run/vol/recovery')
@@ -140,10 +141,10 @@ def validate_boot(controller):
     raise RuntimeError('recovery boot was not verified: ' + last_error)
 
 
-def reset(controller, discard):
+def reset(controller, discard, *, locked=False):
     if not discard:
         raise RuntimeError('reset clears C only; explicit --discard is required')
-    with controller.lifecycle_lock():
+    with (nullcontext() if locked else controller.lifecycle_lock()):
         controller.require_root_helper(HELPER)
         for name in ('initial-C.wim', 'initial-C.json'):
             controller.require_root_helper(RECOVERY / name)
@@ -155,7 +156,7 @@ def reset(controller, discard):
                 merge_offline_evidence(controller, context)
             except Exception:
                 if not MARKER.exists():
-                    controller.start_locked()
+                    controller.start_locked(owner_validation=locked)
                 raise
         elif controller.domstate() in {'shut off', 'shutoff'} and MARKER.exists():
             controller.require_root_helper(CONTEXT)
@@ -172,7 +173,7 @@ def reset(controller, discard):
         controller.event('C_reset_requested_D_retained')
         controller.run([str(controller.PYTHON3), str(HELPER), 'reset', '--discard',
                         '--context', str(CONTEXT)], timeout=3600)
-        controller.start_locked(recovery_validation=True)
+        controller.start_locked(recovery_validation=True, owner_validation=locked)
         try:
             report = validate_boot(controller)
         except Exception:
