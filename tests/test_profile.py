@@ -42,6 +42,14 @@ def profile_for(name="alpha", number=1):
 
 
 class ProfileValidationTests(unittest.TestCase):
+    def test_base_instance_requires_no_installer_iso_or_index(self):
+        data=profile_for();data['root']='/srv/instances/alpha'
+        data['image']={'kind':'base','manifest':'/srv/images/win11/manifest.json'}
+        data['media']['windows_iso']=None;data['windows']['image_index']=None
+        self.assertIs(validate(data,new=True),data)
+        data['root']='/srv/alpha'
+        with self.assertRaisesRegex(ValueError,'instances/name'):validate(data,new=True)
+
     def test_new_profile_rejects_missing_required_input(self):
         data = profile_for()
         data["network"]["bridge"] = None

@@ -1,37 +1,35 @@
 ---
 name: windows-vm-sandbox
-description: 从空 Linux 主机部署和管理隔离的 Windows KVM 虚拟机，支持资源与账户询问、镜像下载交接、新建实例、日常启停、仅重置 C 盘保留 D 盘，以及经 WinRM 上传脚本和操作 Windows。适用于用户明确请求部署或使用该类 VM；不把普通 Windows 本机操作或 Docker 管理改造成虚拟机部署。
+description: 在 Linux/KVM 上从可复用 Windows 基础镜像创建隔离 VM，管理多实例的独立账户、资源、端口和磁盘，删除后重新开出干净实例；也支持已有 Windows VM 的资源、账户调整及 WinRM 操作。
 ---
 
-# Windows VM Sandbox
+# VirtOps：基础镜像与独立实例
 
-先识别用户要做什么，再只读相应文档。使用用户选择的资源、端口、用户名和密码提供方式；当前实例的配置只是案例。
+默认生命周期是 **一次制作只读基础镜像 → 多次创建独立 VM → 删除实例 → 从基础镜像重新创建**。新实例不建立 C 盘恢复 WIM，不使用原机账户、TPM、NVRAM 或证书。每个实例自己的磁盘、账户与运行状态可以完整丢弃，基础镜像和其他实例不受该生命周期操作影响。
 
-| 用户意图 | 先读 | 确定性工具 |
+Agent 负责在本 Skill 的抽象层内执行；复用自带命令，不在用户工作目录拼装一次性的 resize、改账户、clone、cleanup 脚本。Profile、凭据和操作记录是运行数据，保存在工程及已安装 Skill 之外。缺少能力时修改工程并验证，而不是绕过其身份/资源校验。
+
+| 用户意图 | 先读 | 自带入口 |
 |---|---|---|
-| 空 Linux 主机首次部署、新建独立 VM | [初始化部署](references/initialize.md) | `scripts/profile.py`、`scripts/prepare_host.py` |
-| 查看、启停、删除后重建定义 | [日常管理](references/operate.md) | `scripts/host.py`，复用目标机器现有脚本 |
-| 查看同宿主全部已登记 VM | [日常管理](references/operate.md) | `host_root/scripts/status.sh --all` |
-| 升级已有实例运行时 | [日常管理](references/operate.md) | `scripts/upgrade_runtime.py`（默认 check，`--apply` 才变更） |
-| 恢复 Windows、保留 D | [重置与基线](references/reset.md) | 目标的 `reset.sh --discard` |
-| 换同事但复用已安装系统 | [换使用者](references/reprovision.md) | `reset.sh --discard --owner-profile ...` |
-| 上传文件、执行代码、下载结果 | [Windows 操作](references/windows-agent.md) | `scripts/guest.ps1` |
-| 交给另一个 agent／小模型 | [交接契约](references/handoff.md) | 限定 Windows 端点、工作目录和凭据句柄 |
-| 失败、RDP 不通、OOM、安装循环 | [排错](references/troubleshooting.md) | 先读证据，最多两次同因重试 |
+| 从基础镜像开一台或几台 VM、删除后重开 | [基础镜像与实例](references/images-instances.md) | `instance.py create/rebuild`、`destroy.py` |
+| 制作一次可复用系统镜像 | [基础镜像与实例](references/images-instances.md) | `template.py generalize/capture/inspect` |
+| 首次准备 Linux 宿主或专用 Windows 构建 VM | [初始化](references/initialize.md) | `prepare_host.py`，仅构建 VM 使用 ISO 安装 |
+| 调整已有 VM 的 CPU/内存、保留系统改用户密码 | [维护](references/configure.md) | `configure.py`、`account.py` |
+| 查看、启停、日志、查询全部 VM | [日常管理](references/operate.md) | `host.py`、`status.sh --all` |
+| 上传、执行、取回 Windows 文件 | [Windows 操作](references/windows-agent.md) | `guest.ps1`、`credentials.ps1` |
+| 诊断失败或升级旧运行时 | [排错](references/troubleshooting.md)、[日常管理](references/operate.md) | `host.py inspect`、`upgrade_runtime.py` |
+| 明确维护旧式 C-only reset 实例 | [旧版恢复](references/reset.md)、[旧版换人](references/reprovision.md) | 仅现有兼容入口，不应用于新模板实例 |
 
-需要资源与字段说明时读 [profile](references/profile.md)；GPU 需求和专供/共享选择读 [GPU 分支](references/gpu.md)，不可默认无 GPU。适配现有 `192.168.20.5 / winvm01` 时再读 [当前案例](references/current-instance.md)。下载地址及版本核验读 [镜像与依赖](references/downloads.md)。
+字段含义见 [profile](references/profile.md)。GPU 需求不明确时读 [GPU 分支](references/gpu.md)，不能擅自抢占宿主 GPU。历史 `winvm01` 只用于 [案例排障](references/current-instance.md)，其参数不是新实例默认值。
 
-## 执行约定
+## 执行边界
 
-1. 对已有 VM 先核对 profile 的名称、UUID、路径和远端事实。日常任务不重新安装宿主依赖，不覆盖运行脚本，不引入新全局命令。
-2. 新建 VM／从空机初始化前，询问未提供的资源、端口、账户等关键输入；完成容量盘点和具体计划，在用户已授权部署的范围内执行。额外影响其他服务或清除现有数据才另问。已回答过的内容沿用，不重复询问。
-3. 缺镜像、凭据、授权或关键目标信息时，在对应交接点停下。记录下一步及所需文件，不把超时当作许可。
-4. 维护 JSON 进度文件：`stage`、`target`、`evidence`、`next_action`、`needs_user_input`；不放密码。每步通过验收才推进，失败停在该步。
-5. 当前运行时以 `/home/vm_run/scripts` 为准；包内 runtime 仅是生成新实例的输入，不能对现有 VM 直接“重新部署”。
-6. 用户请求“重置／重装”时说明 C 会清除、D 是否保留。先检查授权和恢复条件；“重建定义”只保留并重新注册原状态，不能冒充系统重置。
-7. 固定 guest RAM、宿主上限和整机预留是三件事。低内存告警不暂停 VM；不停止其他用户任务或自动降低他们的限额。
-8. 密码仅用安全提示、当前用户 DPAPI 或受限文件，永不写聊天、Git、命令参数、脚本日志。Windows 操作使用用户选定的管理员，不擅自新增低权限 agent 账户。
-9. RDP 验收需成功认证和实际桌面会话；WinRM 需认证、执行身份和上传哈希；出站隔离需 Windows 内请求与宿主 DROP 证据。端口通、启动日志或网页超时单独都不够。
-10. 不导出整盘快照、TPM/NVRAM 回滚来实现“只重置 C、保留 D”。加密、未知分区或证据不完整时停止自动重置。
+- 继承用户已给出的选择；合理的实例名、UUID 等可由 agent 生成。CPU、内存、磁盘预算、账户、GPU、管理入口等会改变结果的关键选择缺失时集中询问。用户说“沿用配置”即可复用非秘密配置，不重复追问。
+- 每实例登记唯一 UUID/root、MAC、bridge、/30、端口及 CPU 预留。检查所有实例和其他宿主任务的总预算；CPU/内存上限不是物理资源预留，也不保证没有性能竞争。
+- 同一只读模板通过 `qemu-img convert` 物化为独立 qcow2；默认不使用 backing chain。固件变量来自厂商模板，TPM 状态全新生成。实例间主动网络访问默认拒绝。
+- `create` 无 `--apply` 时只检查；`destroy/rebuild --apply --discard` 完整清除该实例的系统、软件和数据。用户明确要求删除/重建即已授权此范围，不追加形式化许可。旧实例目录与共享根重合时阻断通用销毁，不递归删除共享根。
+- 密码只经安全提示、DPAPI 或 root-only 文件传递，不进入 profile、Git、命令行、README 和日志。每实例选定管理员供桌面和 WinRM 共用，不额外创建 agent 账户。
+- 阶段 JSON 记录 `stage/target/evidence/next_action/needs_user_input`；同阶段失败保留现场和续作记录，不重复格式化或盲目重装。
+- 分清已验证层次：XML/磁盘/身份/资源测试、Windows 启动、实际 WinRM 认证与上传哈希、RDP 真实桌面、实例间和出站网络阻断。模拟测试不能替代现场开出两台 VM 的验收。
 
-给用户的结果只需：动作和目标、是否通过、关键证据、剩余阻塞或下一步。小模型按一条阶段命令执行、读取 JSON 返回、验收、继续，不一次猜出整套 SSH/PowerShell 命令。
+结果只需说明：目标和动作、验证证据、任何明确未验证项或阻塞。

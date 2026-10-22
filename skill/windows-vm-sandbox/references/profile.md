@@ -1,5 +1,7 @@
 # Profile 参数档案
 
+新实例优先复制 `assets/profiles/base-instance.example.json`，填 `image.kind=base` 与只读 `image.manifest`。这种模式不需要 Windows ISO 或 image_index，仍需要 VirtIO ISO；root 统一为 `host_root/instances/<name>`，storage_gib 与模板 virtual size 一致。`image.kind=installer`（省略时兼容旧格式）仅供从 ISO 安装，专用构建 VM 可显式设置 `template_builder=true`。新实例不建立 C 恢复基线，详见 [基础镜像与实例](images-instances.md)。
+
 Profile 是一次 VM 的唯一配置输入。它描述目标、资源、网络和凭据句柄；profile 本身不保存密码。先复制 `assets/profiles/new-vm.example.json`，补齐后运行：
 
 ```sh

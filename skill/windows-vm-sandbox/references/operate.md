@@ -1,5 +1,7 @@
 # 日常管理
 
+新模板实例的完整删除/重开使用 [基础镜像与实例](images-instances.md) 的 `destroy.py` / `instance.py rebuild`；资源和保留系统改账户使用 [维护](configure.md) 的内置命令。本文 `host.py delete/recreate` 仍只注销/重注册定义，属于兼容入口，**不是完整删除或干净重建**。
+
 需要换同事时不要把 `delete/recreate` 当作重建 Windows。先读 [换使用者并复用 Windows 基线](reprovision.md)；`delete/recreate` 只恢复 libvirt 定义。
 
 日常管理使用 profile 驱动的 `scripts/host.py`。它通过 profile 的 SSH 身份调用目标机 root-owned controller，不把宿主管理命令复制成一堆新入口，也不改系统全局命令。先确认 profile 的 name、UUID、root 和 SSH 路由与远端事实一致：

@@ -21,6 +21,7 @@ import xml.etree.ElementTree as ET
 
 from profile import load, cpus
 from render import GIB, runtime_files, domain_xml, seed_files
+from base_image import inspect_manifest, materialize, inject_unattend
 
 _registry_spec = importlib.util.spec_from_file_location(
     'virtops_instance_registry',
@@ -52,24 +53,27 @@ def unit_name(path, suffix='mount'):
     return run(['systemd-escape', '--path', '--suffix=' + suffix, str(path)]).stdout.strip()
 
 
-def select_cpu(data, text):
+def select_cpu(data, text, reserved=()):
     groups = {}
     for line in text.splitlines():
         if not line or line.startswith('#'): continue
         cpu, core, socket, online = line.split(',')[:4]
         if online.lower() in {'y', 'yes', '1'}: groups.setdefault((int(socket), int(core)), []).append(int(cpu))
     wanted = data['resources']['vcpus']
+    reserved = set(reserved)
     requested = data['resources'].get('cpu_set')
     if requested:
         selected = set(cpus(requested))
-        chosen = [sorted(ids) for ids in groups.values() if set(ids) <= selected]
-        if set(n for pair in chosen for n in pair) != selected: raise RuntimeError('CPU set must contain complete online SMT sibling groups')
+        if selected & reserved:raise RuntimeError('Requested CPUs are reserved by another VM')
+        chosen = [sorted(set(ids) & selected) for ids in groups.values() if set(ids) & selected]
+        if set(n for pair in chosen for n in pair) != selected or len({len(ids) for ids in chosen})!=1:
+            raise RuntimeError('CPU set must select a uniform number of online threads per physical core')
     else:
         lengths = {len(ids) for ids in groups.values()}
         if len(lengths) != 1: raise RuntimeError('Nonuniform CPU topology: choose an explicit compatible CPU set')
         threads = next(iter(lengths))
         if wanted % threads: raise RuntimeError('vCPU count must fit complete SMT sibling groups')
-        chosen = sorted((sorted(ids) for ids in groups.values()), key=min)[:wanted // threads]
+        chosen = sorted((sorted(ids) for ids in groups.values() if not (set(ids)&reserved)), key=min)[:wanted // threads]
     if sum(map(len, chosen)) != wanted or len({len(ids) for ids in chosen}) != 1: raise RuntimeError('Requested CPU count does not fit the host')
     result = copy.deepcopy(data)
     result['resources'].update(cpu_set=','.join(str(n) for n in sorted(n for ids in chosen for n in ids)), cpu_order=[n for ids in chosen for n in ids], threads_per_core=len(chosen[0]))
@@ -159,7 +163,11 @@ def preflight(data):
     data['gpu_verified']=verify_gpu(data)
     if run(['virsh', '--readonly', '-c', 'qemu:///system', 'dominfo', data['name']], check=False).returncode == 0: raise RuntimeError('VM name already exists; use operate/adopt, not fresh initialization')
     if data['uuid'] in run(['virsh', '--readonly', '-c', 'qemu:///system', 'list', '--all', '--uuid']).stdout: raise RuntimeError('VM UUID already exists')
-    data = select_cpu(data, run(['lscpu', '-p=CPU,CORE,SOCKET,ONLINE']).stdout)
+    reserved=set()
+    for _,item in _registry._records(Path(data['host_root'])/'registry'):
+        if item['name']!=data['name'] and (item.get('resources') or {}).get('cpu_set'):
+            reserved.update(cpus(item['resources']['cpu_set']))
+    data = select_cpu(data, run(['lscpu', '-p=CPU,CORE,SOCKET,ONLINE']).stdout, reserved)
     memory = next(int(line.split()[1]) * 1024 for line in Path('/proc/meminfo').read_text().splitlines() if line.startswith('MemAvailable:'))
     if memory < data['limits']['start_free_gib'] * GIB: raise RuntimeError('Insufficient host MemAvailable for the approved cold-start budget; do not stop other users jobs')
     root = Path(data['root']); ancestor = root
@@ -168,7 +176,11 @@ def preflight(data):
     stat = os.statvfs(ancestor); free = stat.f_bavail * stat.f_frsize
     data['host_facts'] = host_facts(ancestor)
     if free < (data['resources']['storage_gib'] + data['limits']['root_free_gib']) * GIB: raise RuntimeError('Insufficient space on the instance-root filesystem for a fully allocated store and approved host reserve')
-    for key in ('windows_iso', 'virtio_iso'):
+    from_base = data.get('image', {}).get('kind') == 'base'
+    media_keys = ('virtio_iso',) if from_base else ('windows_iso', 'virtio_iso')
+    if from_base and not shutil.which('ntfscat'):
+        raise RuntimeError('NEEDS_PACKAGES: ntfscat (normally supplied by ntfs-3g)')
+    for key in media_keys:
         if not Path(data['media'][key]).is_file(): raise RuntimeError('NEEDS_DOWNLOAD: ' + key + ' at ' + data['media'][key])
     pairs=[('/usr/share/OVMF/OVMF_CODE_4M.ms.fd','/usr/share/OVMF/OVMF_VARS_4M.ms.fd'),
            ('/usr/share/OVMF/OVMF_CODE_4M.secboot.fd','/usr/share/OVMF/OVMF_VARS_4M.ms.fd'),
@@ -193,9 +205,17 @@ def preflight(data):
     listeners = run(['ss','-ltn']).stdout
     for port in [net['rdp_port'],net['winrm_port']]:
         if re.search(r':' + str(port) + r'\s', listeners) or re.search(r'--dport ' + str(port) + r'\b', rules): raise RuntimeError('Published port already used by a listener or NAT rule: ' + str(port))
-    data['image_verified'] = iso_image(data)
+    if from_base:
+        base = inspect_manifest(data['image']['manifest'])
+        if base['windows']['language'].lower() != data['windows']['language'].lower():
+            raise RuntimeError('Base Windows language differs from the requested instance')
+        if base['virtual_size'] != data['resources']['storage_gib']*GIB:
+            raise RuntimeError('Select the base virtual disk size as storage_gib; disk resizing is a separate operation')
+        data['image_verified'] = base
+    else:
+        data['image_verified'] = iso_image(data)
     verify_virtio(data['media']['virtio_iso'])
-    data['media_verified']={key:media_info(data['media'][key]) for key in ('windows_iso','virtio_iso')}
+    data['media_verified']={key:media_info(data['media'][key]) for key in media_keys}
     return data
 
 
@@ -279,10 +299,18 @@ def storage(data):
         p=root/'vol'/folder;p.mkdir(mode=mode);p.chmod(mode)
     os.chown(root/'vol/state/tpm/tpm2',swtpm.pw_uid,swtpm.pw_gid);os.chown(root/'vol/state/console',qemu.pw_uid,qemu.pw_gid)
     nvram=root/'vol/state'/(data['name']+'_VARS.fd');shutil.copyfile(data['ovmf_vars'],nvram);os.chown(nvram,qemu.pw_uid,qemu.pw_gid);nvram.chmod(0o600)
-    disk=root/'vol/current.qcow2';run(['qemu-img','create','-f','qcow2','-o','preallocation=metadata',str(disk),str(data['resources']['storage_gib']*GIB)]);os.chown(disk,qemu.pw_uid,qemu.pw_gid);disk.chmod(0o660)
+    disk=root/'vol/current.qcow2'
+    if data.get('image', {}).get('kind') == 'base':
+        materialize(data,disk)
+    else:
+        run(['qemu-img','create','-f','qcow2','-o','preallocation=metadata',str(disk),str(data['resources']['storage_gib']*GIB)])
+    os.chown(disk,qemu.pw_uid,qemu.pw_gid);disk.chmod(0o660)
     tpm=Path('/var/lib/libvirt/swtpm')/data['uuid'];tpm.parent.mkdir(parents=True,exist_ok=True);tpm.mkdir(mode=0o711);run(['mount','--bind',str(root/'vol/state/tpm'),str(tpm)])
     (root/'logs').symlink_to(root/'vol/logs',target_is_directory=True)
-    for relative,text in runtime_files(data,fs_uuid,inode).items(): write_new(root/relative,text,0o755 if relative.endswith(('.py','.sh')) else 0o644)
+    rendered=runtime_files(data,fs_uuid,inode)
+    for relative,text in rendered.items(): write_new(root/relative,text,0o755 if relative.endswith(('.py','.sh')) else 0o644)
+    write_new(root/'vol/state/private/runtime-files.json',json.dumps({'schema_version':1,'name':data['name'],'uuid':data['uuid'],
+        'sha256':{relative:hashlib.sha256((root/relative).read_bytes()).hexdigest() for relative in rendered}},sort_keys=True)+'\n',0o600)
     write_new(root/'vol'/(data['name']+'.xml'),domain_xml(data,installing=False),0o600)
     write_new(root/'vol/state/install.xml',domain_xml(data,installing=True),0o600)
     units,hook=units_and_hook(data,fs_uuid,inode)
@@ -379,12 +407,14 @@ def seed(data):
         if path.is_symlink() or st.st_uid!=0 or st.st_mode&0o077: raise RuntimeError('Secret file must be root-owned 0600')
         password=json.loads(path.read_text())['password']
     else: raise RuntimeError('Choose a password mode for fresh initialization')
-    if len(password)<12 or sum(bool(re.search(pattern,password)) for pattern in ('[a-z]','[A-Z]','[0-9]','[^A-Za-z0-9]'))<3:
-        raise RuntimeError('Use at least 12 characters and three of lowercase/uppercase/digits/symbols')
+    if not isinstance(password,str) or not password:
+        raise RuntimeError('A nonempty Windows password is required; the selected Windows policy is authoritative')
     write_new(credential,json.dumps({data['windows']['admin_user']:password}),0o600)
     with tempfile.TemporaryDirectory(prefix='seed-',dir=private) as directory:
         for name,text in seed_files(data,password).items():
             Path(directory,name).write_text(text,encoding='utf-8-sig' if name.endswith(('.ps1','.xml')) else 'utf-8',newline='')
+        if data.get('image', {}).get('kind') == 'base':
+            inject_unattend(data,Path(directory)/'Autounattend.xml')
         output=root/'vol/state/autounattend.iso'
         if output.exists():raise RuntimeError('Seed ISO already exists')
         run(['xorriso','-as','mkisofs','-J','-r','-V','VMSEED','-o',str(output),directory])
@@ -396,7 +426,10 @@ def activate(data):
     root=Path(data['root']);name=data['name']
     if not (root/'vol/state/autounattend.iso').is_file(): raise RuntimeError('Run the seed stage first')
     verify_gpu(data)
-    for key in ('windows_iso','virtio_iso'):
+    if data.get('image', {}).get('kind') == 'base':
+        if inspect_manifest(data['image']['manifest']) != data['image_verified']:
+            raise RuntimeError('Published base image changed since storage preparation')
+    for key in data['media_verified']:
         if media_info(data['media'][key])!=data['media_verified'][key]:raise RuntimeError('Installation ISO changed since preflight: '+key)
     if run(['virsh','--readonly','-c','qemu:///system','dominfo',name],check=False).returncode==0: raise RuntimeError('VM already defined; inspect and use existing management, not activate again')
     guests=Path('/etc/default/libvirt-guests');text=guests.read_text() if guests.exists() else ''
@@ -444,8 +477,8 @@ def finish(data):
 
 
 def verify_saved(requested,saved):
-    for key in ('name','uuid','root','network','windows','media','limits','gpu'):
-        if requested[key]!=saved[key]:raise RuntimeError('Profile changed after storage stage: '+key+'; inspect the immutable instance, do not overwrite it')
+    for key in ('name','uuid','root','network','windows','media','limits','gpu','image','template_builder'):
+        if requested.get(key)!=saved.get(key):raise RuntimeError('Profile changed after storage stage: '+key+'; inspect the immutable instance, do not overwrite it')
     for key,value in requested['resources'].items():
         if key=='cpu_set':
             if value and set(cpus(value))!=set(cpus(saved['resources'][key])):raise RuntimeError('CPU selection changed after storage')

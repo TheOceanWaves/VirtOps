@@ -43,6 +43,8 @@ def validate(data: dict, *, new: bool = False) -> dict:
             for item in value:
                 no_secrets(item)
     no_secrets(data)
+    if 'template_builder' in data and type(data['template_builder']) is not bool:
+        raise ValueError('template_builder must be an explicit boolean')
     if required(data, 'schema_version') != 1:
         raise ValueError('unsupported profile schema')
     name = required(data, 'name')
@@ -133,7 +135,17 @@ def validate(data: dict, *, new: bool = False) -> dict:
                 raise ValueError('GPU PCI devices must be distinct lowercase domain:bus:slot.function addresses')
             if data['gpu'].get('dedicated') is not True:raise ValueError('PCI passthrough needs explicitly dedicated GPU resources')
         if mode=='none' and data['gpu'].get('pci_devices'):raise ValueError('GPU mode none cannot have PCI devices')
-        for key in ('windows_iso', 'virtio_iso'):
+        image = data.get('image', {'kind': 'installer'})
+        if not isinstance(image, dict) or image.get('kind') not in {'installer', 'base'}:
+            raise ValueError('image.kind must be installer or base')
+        if image['kind'] == 'base':
+            if PurePosixPath(root)!=PurePosixPath(host_root)/'instances'/name:
+                raise ValueError('base instance root must be host_root/instances/name')
+            manifest = required(data, 'image.manifest')
+            if not re.fullmatch(r'/(?:[A-Za-z0-9_.-]+/)+manifest\.json', manifest) or '..' in PurePosixPath(manifest).parts:
+                raise ValueError('base manifest must be a specific absolute Linux manifest.json path')
+        media_keys = ('virtio_iso',) if image['kind'] == 'base' else ('windows_iso', 'virtio_iso')
+        for key in media_keys:
             path = required(data, 'media.'+key)
             if not path.startswith('/') or '\n' in path or '\r' in path:
                 raise ValueError('media paths must be absolute paths on the Linux host')
@@ -141,7 +153,7 @@ def validate(data: dict, *, new: bool = False) -> dict:
             raise ValueError('invalid Windows language identifier')
         if not re.fullmatch(r'[A-Za-z0-9 +_-]{1,64}', data['windows'].get('time_zone','UTC')):
             raise ValueError('invalid Windows time zone identifier')
-        if type(required(data, 'windows.image_index')) is not int or data['windows']['image_index'] < 1:
+        if image['kind'] == 'installer' and (type(required(data, 'windows.image_index')) is not int or data['windows']['image_index'] < 1):
             raise ValueError('select the actual Pro/Enterprise image index from the ISO')
     return data
 

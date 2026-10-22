@@ -352,6 +352,8 @@ def start_locked(*, recovery_validation: bool = False, owner_validation: bool = 
 
 
 def _start_admitted(*, recovery_validation: bool = False, owner_validation: bool = False) -> dict[str, Any]:
+    if (STORE / 'state/private/template-builder.json').exists():
+        raise ControllerError('This disposable template builder was resealed; capture it without starting it again')
     if owner_pending() and not owner_validation:
         raise ControllerError('Owner recovery is pending; resume the same reset request')
     marker = STORE / 'recovery/c-reset-in-progress.json'
@@ -427,6 +429,8 @@ def stop() -> dict[str, Any]:
 
 
 def reset(discard: bool, owner_profile=None, discard_data=False) -> dict[str, Any]:
+    if instance_config().get('image', {}).get('kind') == 'base':
+        raise ControllerError('Template-derived instances use instance.py rebuild; C-only reset is a legacy operation')
     if not discard:
         raise ControllerError("reset requires explicit --discard")
     enabled = STORE / 'recovery/reset-enabled.json'

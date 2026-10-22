@@ -84,6 +84,13 @@ def runtime_files(data, store_uuid, inode):
     if missing:
         raise ValueError('runtime source missing: ' + ', '.join(missing))
     for path in sorted((runtime_dir / name for name in RUNTIME_SOURCES), key=lambda item: item.name):
+        if data.get('image', {}).get('kind') == 'base' and path.name in {
+            'reset.sh', 'delete.sh', 'recreate.sh', 'winvm01_c_reset.py', 'winvm01_recovery.py',
+            'winvm01_reset_context.ps1', 'winvm01_reset_postboot.ps1',
+        }:
+            # Disposable instances replace their whole private disk from the
+            # template. Only legacy installations retain C-only recovery.
+            continue
         if path.name == 'domain.xml':
             # The domain is regenerated from the profile below; retaining the
             # reference XML in the source tree is useful for review only.
@@ -156,16 +163,18 @@ def domain_xml(data, *, installing):
         for parent in root.iter():
             if alias in list(parent): parent.remove(alias); break
     disk = devices.find("disk[@device='disk']")
-    disk.find('boot').set('order', '2' if installing else '1')
+    from_base = data.get('image', {}).get('kind') == 'base'
+    disk.find('boot').set('order', '2' if installing and not from_base else '1')
     if installing:
-        for index, key in enumerate(('windows_iso', 'virtio_iso', 'seed_iso'), 1):
+        media_keys = ('virtio_iso', 'seed_iso') if from_base else ('windows_iso', 'virtio_iso', 'seed_iso')
+        for index, key in enumerate(media_keys, 1):
             path = data['media'][key] if key != 'seed_iso' else data['root'] + '/vol/state/autounattend.iso'
             cd = ET.SubElement(devices, 'disk', {'type': 'file', 'device': 'cdrom'})
             ET.SubElement(cd, 'driver', {'name': 'qemu', 'type': 'raw'})
             ET.SubElement(cd, 'source', {'file': path})
             ET.SubElement(cd, 'target', {'dev': 'sd' + chr(ord('a') + index), 'bus': 'sata'})
             ET.SubElement(cd, 'readonly')
-            if index == 1: ET.SubElement(cd, 'boot', {'order': '1'})
+            if index == 1 and not from_base: ET.SubElement(cd, 'boot', {'order': '1'})
     ET.indent(root)
     return ET.tostring(root, encoding='unicode') + '\n'
 
@@ -177,6 +186,12 @@ def seed_files(data, password):
     mapping.update({'__VM_NAME__': data['windows']['computer_name'], '__BOOTSTRAP_ADMIN_USER__': data['windows']['admin_user']})
     root = ET.fromstring(replace_text((ASSETS / 'templates/remote-windows-unattend-template.xml').read_text(encoding='utf-8-sig'), mapping))
     ns = {'u': 'urn:schemas-microsoft-com:unattend'}
+    if data.get('image', {}).get('kind') == 'base':
+        # A generalized disk already contains Windows. Never carry the installer
+        # disk wipe / ImageInstall pass into a template-derived instance.
+        for settings in list(root.findall('u:settings', ns)):
+            if settings.get('pass') == 'windowsPE':
+                root.remove(settings)
     for node in root.iter():
         if node.text == '__BOOTSTRAP_ADMIN_PASSWORD__': node.text = password
         if node.tag.split('}')[-1] in {'InputLocale', 'SystemLocale', 'UILanguage', 'UserLocale'}: node.text = data['windows']['language']

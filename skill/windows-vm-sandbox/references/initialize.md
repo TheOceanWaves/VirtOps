@@ -1,5 +1,7 @@
 # 初始化部署与新建 VM
 
+**当前默认：** 普通实例先走 [基础镜像与实例](images-instances.md)，复用系统，不创建 C 恢复 WIM。本文的 ISO 安装主要用于宿主首次准备和 `template_builder=true` 的专用构建 VM；该 builder 完成第 5 步后转 template.py，不执行第 6 步。下面的基线/重置章节仅用于明确要求兼容旧部署的场景。
+
 本流程适用于空的 Ubuntu/Debian KVM 主机，或在同一宿主创建一台全新 VM。它与已部署实例的日常管理分开。每阶段都写入 `stage/target/evidence/next_action/needs_user_input`；验收不通过就停在该阶段，不猜测、不覆盖、不重复安装。
 
 ## 0. 收集输入并形成 profile

@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "name": null,
+  "uuid": null,
+  "labels": {"owner": null, "purpose": null},
+  "host_root": "/home/vm_run",
+  "root": null,
+  "ssh": {"host": null, "user": null, "port": 22, "sudo": true, "bind_address": null},
+  "image": {"kind": "base", "manifest": null},
+  "resources": {"memory_gib": null, "host_limit_gib": null, "vcpus": null, "storage_gib": null, "cpu_set": null},
+  "gpu": {"mode": null, "pci_devices": [], "dedicated": null},
+  "network": {"bridge": null, "subnet": null, "bridge_ip": null, "guest_ip": null, "publish_ip": null, "client_cidr": null, "rdp_port": null, "winrm_port": null},
+  "windows": {"computer_name": null, "admin_user": null, "language": null, "image_index": null},
+  "media": {"windows_iso": null, "virtio_iso": null},
+  "credentials": {"mode": null, "secret_file": null, "local_clixml": null},
+  "winrm_thumbprint": null,
+  "limits": {"root_free_gib": 32, "start_free_gib": null, "resume_free_gib": 16, "watch_free_gib": 16}
+}

@@ -115,17 +115,24 @@ class RuntimeRenderingTests(unittest.TestCase):
             self.assertGreater(len(node.text or ""), 0)
             self.assertLessEqual(len(node.text), 259)
 
-    def test_cpu_selection_requires_complete_smt_sibling_groups(self):
+    def test_cpu_selection_requires_matching_count_and_uniform_threads(self):
         data = render_profile("alpha", 1)
         data["resources"].update(vcpus=2, cpu_set="0")
         lscpu = "\n".join(("0,0,0,Y", "1,0,0,Y", "2,1,0,Y", "3,1,0,Y"))
-        with self.assertRaisesRegex(RuntimeError, "complete online SMT"):
+        with self.assertRaisesRegex(RuntimeError, "count does not fit"):
             select_cpu(data, lscpu)
 
         data["resources"]["cpu_set"] = "0-1"
         selected = select_cpu(data, lscpu)
         self.assertEqual(selected["resources"]["cpu_order"], [0, 1])
         self.assertEqual(selected["resources"]["threads_per_core"], 2)
+
+    def test_cpu_selection_avoids_other_vm_and_can_use_one_thread_per_core(self):
+        data=render_profile('alpha',1);data['resources'].update(vcpus=2,cpu_set=None)
+        topology='0,0,0,Y\n1,0,0,Y\n2,1,0,Y\n3,1,0,Y'
+        self.assertEqual(select_cpu(data,topology,reserved={0,1})['resources']['cpu_order'],[2,3])
+        data['resources']['cpu_set']='0,2'
+        self.assertEqual(select_cpu(data,topology)['resources']['threads_per_core'],1)
 
 
 if __name__ == "__main__":

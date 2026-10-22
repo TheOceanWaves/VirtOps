@@ -13,6 +13,7 @@ from contextlib import contextmanager
 import ipaddress
 import json
 import os
+import re
 from pathlib import Path
 import secrets
 import subprocess
@@ -132,6 +133,18 @@ def _conflict(candidate: dict[str, Any], existing: dict[str, Any]) -> str | None
     for key in ("rdp_port", "winrm_port"):
         if candidate[key] in {existing.get("rdp_port"), existing.get("winrm_port")}:
             return f"published port {candidate[key]} already reserved by {existing.get('name')}"
+    def cpu_ids(record):
+        text=(record.get('resources') or {}).get('cpu_set')
+        if not text:return set()
+        result=set()
+        for part in text.split(','):
+            if not re.fullmatch(r'\d+(?:-\d+)?',part):raise ValueError('invalid registry CPU reservation')
+            bounds=[int(n) for n in part.split('-')]
+            if bounds[0]>bounds[-1]:raise ValueError('reversed registry CPU reservation')
+            result.update(range(bounds[0],bounds[-1]+1))
+        return result
+    if cpu_ids(candidate)&cpu_ids(existing):
+        return f"CPU set overlaps reservation {existing.get('name')}"
     return None
 
 

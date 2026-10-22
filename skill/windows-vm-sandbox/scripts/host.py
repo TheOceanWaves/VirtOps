@@ -21,6 +21,8 @@ def main():
     args = parser.parse_args()
     try:
         data = load(args.profile)
+        if data.get('image',{}).get('kind')=='base' and args.action in {'reset','delete','recreate'}:
+            raise ValueError('Template-derived instances use destroy.py or instance.py rebuild for full replacement; legacy definition/C reset commands do not apply')
         if args.action == 'reset' and not args.discard:
             raise ValueError('reset clears C:; user authorization and --discard are required')
         if args.action != 'reset' and (args.discard_data or args.owner_profile):

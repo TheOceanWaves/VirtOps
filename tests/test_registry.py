@@ -71,7 +71,11 @@ class RegistryTests(unittest.TestCase):
             shared_ip = profile(root, name='beta-vm', uuid='22222222-2222-4222-8222-222222222222',
                                 subnet='172.31.41.0/30', rdp=23390, winrm=25990)
             shared_ip['network']['bridge'] = 'vopsbr1'
+            shared_ip['resources']['cpu_set'] = '4-7'
             registry.reserve(shared_ip)
+            cpu_conflict=profile(root,name='cpu-vm',uuid='55555555-5555-4555-8555-555555555555',subnet='172.31.45.0/30',rdp=23395,winrm=25995)
+            cpu_conflict['network']['bridge']='vopscpu'
+            with self.assertRaisesRegex(ValueError,'CPU set overlaps'):registry.reserve(cpu_conflict)
             cases = [
                 profile(root, name='alpha-vm', rdp=23999),
                 profile(root, name='gamma-vm', uuid='11111111-1111-4111-8111-111111111111', subnet='172.31.42.0/30', rdp=23391, winrm=25991),
