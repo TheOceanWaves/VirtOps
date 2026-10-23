@@ -43,6 +43,17 @@ def inspect(data):
             'memory_note': 'VM ceilings are not reservations; pause does not release QEMU RSS.'}
 
 
+def network_only_logs(result):
+    """Strip lifecycle events at the host boundary, retaining VM network records."""
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError('logs command did not return JSON') from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError('logs command returned an invalid payload')
+    return {'network_samples': payload.get('network_samples', [])}
+
+
 def main(request):
     data, action = request['profile'], request['action']
     if action == 'inspect':
@@ -84,6 +95,16 @@ def main(request):
         if request.get('discard_data'):
             arguments += ['--discard-data']
     result = run(arguments, timeout=3700 if action == 'reset' else 150, check=False)
+    if action == 'logs' and request.get('network_only'):
+        if result.returncode:
+            output = result.stdout
+        else:
+            output = json.dumps(network_only_logs(result), ensure_ascii=False, indent=2, sort_keys=True) + '\n'
+        print(output, end='')
+        if result.stderr:
+            import sys
+            print(result.stderr, file=sys.stderr, end='')
+        return result.returncode
     print(result.stdout, end='')
     if result.stderr:
         import sys

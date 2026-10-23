@@ -394,6 +394,25 @@ def post_apply_verify(root: Path, profile: dict) -> None:
         raise RuntimeError("vmctl read-only status verification failed")
 
 
+def restart_collector_if_needed(profile: dict, content_changed: bool) -> bool:
+    """Reload a changed collector only when its existing unit is active."""
+    if not content_changed:
+        return False
+    service = f"{profile['name']}-log-collector.service"
+    active = run(["systemctl", "is-active", "--quiet", service])
+    if active.returncode == 3:
+        return False
+    if active.returncode:
+        raise RuntimeError(f"unable to determine log collector service state: {service}")
+    restarted = run(["systemctl", "restart", service])
+    if restarted.returncode:
+        raise RuntimeError(f"log collector service restart failed: {service}")
+    active_after = run(["systemctl", "is-active", "--quiet", service])
+    if active_after.returncode:
+        raise RuntimeError(f"log collector service is not active after restart: {service}")
+    return True
+
+
 @contextlib.contextmanager
 def lifecycle_lock(name: str, lock_dir: Path = Path("/run/lock")):
     lock_dir.mkdir(parents=True, exist_ok=True)
@@ -464,12 +483,24 @@ def inspect(profile_path: Path, *, apply=False, lock_dir=Path("/run/lock")) -> d
         raise RuntimeError("external edits detected: " + ", ".join(sorted(mismatches)))
     if not apply:
         return {"status": "ready", "mode": "check", "vm_state": state, "store": store,
-                "files": len(rendered), "apply_required": True}
+                "files": len(rendered), "apply_required": True,
+                "restarted": False, "network_changed": False, "collector_restarted": False}
     if state not in {"running", "paused"}:
         raise RuntimeError("apply requires the existing VM to remain running or paused")
     with lifecycle_lock(profile["name"], lock_dir):
         # Re-run all checks while holding the instance lifecycle lock.
         inspect(profile_path, apply=False, lock_dir=lock_dir)
+        collector_relative = Path("scripts/lib") / f"{profile['name']}_log_collector.py"
+        collector_target = root / collector_relative
+        collector_content_changed = False
+        if collector_relative in rendered:
+            desired_collector_hash = hashlib.sha256(rendered[collector_relative]).hexdigest()
+            installed_collector_hash = installed.get(collector_relative.as_posix())
+            collector_content_changed = (
+                not collector_target.exists() or collector_target.is_symlink() or
+                not collector_target.is_file() or collector_target.read_bytes() != rendered[collector_relative] or
+                (installed_collector_hash is not None and installed_collector_hash != desired_collector_hash)
+            )
         for relative, source in rendered.items():
             atomic_copy(source, destination[relative])
         ensure_instance(root, profile, store)
@@ -479,9 +510,11 @@ def inspect(profile_path: Path, *, apply=False, lock_dir=Path("/run/lock")) -> d
         if after != state:
             raise RuntimeError("VM state changed during runtime replacement")
         post_apply_verify(root, profile)
+        collector_restarted = restart_collector_if_needed(profile, collector_content_changed)
         save_installed_hashes(root, profile, rendered)
     return {"status": "applied", "mode": "apply", "vm_state": state, "store": store,
-            "files": len(rendered), "restarted": False, "network_changed": False}
+            "files": len(rendered), "restarted": False, "network_changed": False,
+            "collector_restarted": collector_restarted}
 
 
 def main() -> int:

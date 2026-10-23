@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Collect sampled winvm01 firewall drops from the host kernel journal.
 
-Only journal MESSAGE values beginning with ``WINVM01 DROP`` are accepted.
+Only guest-originated unicast attempts beginning with ``WINVM01 DROP`` are
+accepted. Host traffic, broadcast/multicast and management replies are omitted.
 The resulting JSONL contains UTC time, route, source/destination IPs and
 ports, interfaces, and a sanitized kernel message.  It deliberately does not
 copy packet payloads or arbitrary journal text.  Firewall DROP counters remain
@@ -16,6 +17,7 @@ elsewhere, ownership is not root, or the mount's free space is abnormal.
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import json
 import os
 import re
@@ -38,6 +40,41 @@ MOUNT_CHECK_SECONDS = 5.0
 MESSAGE_PREFIX = "WINVM01 DROP"
 SAFE_FIELDS = ("IN", "OUT", "SRC", "DST", "PROTO", "SPT", "DPT")
 KEY_VALUE = re.compile(r"(?P<key>[A-Z][A-Z0-9_]*)=(?P<value>[^\s]+)")
+VM_BRIDGE = "winbr01"
+VM_SUBNET = ipaddress.ip_network("172.30.61.0/30")
+VM_GATEWAY = "172.30.61.1"
+MANAGEMENT_PORTS = {3389, 5986}
+
+
+def relevant_vm_outbound(record: dict[str, Any]) -> bool:
+    """Select guest-originated unicast attempts, never host or ingress traffic."""
+    if record.get("route") not in ("input", "input6", "fwd-from", "fwd-from6"):
+        return False
+    interface = record.get("interfaces")
+    if not isinstance(interface, dict) or interface.get("in") != VM_BRIDGE:
+        return False
+    ip = record.get("ip")
+    if not isinstance(ip, dict):
+        return False
+    try:
+        destination = ipaddress.ip_address(ip.get("dst"))
+    except (TypeError, ValueError):
+        return False
+    if destination.is_multicast or destination.is_unspecified or destination in {
+        VM_SUBNET.broadcast_address, ipaddress.ip_address("255.255.255.255")
+    }:
+        return False
+    ports = record.get("ports") or {}
+    # Do not hide a new connection attempt merely because its source port
+    # matches a management listener.
+    raw = record.get("rawmessage")
+    flags = record.get("tcp_flags")
+    if (record.get("route") == "input" and ip.get("dst") == VM_GATEWAY
+            and isinstance(ports, dict) and isinstance(ports.get("src"), int) and ports.get("src") in MANAGEMENT_PORTS
+            and isinstance(raw, str) and "PROTO=TCP" in raw
+            and (not isinstance(flags, list) or "SYN" not in flags)):
+        return False
+    return True
 
 
 class CollectorError(RuntimeError):
@@ -147,14 +184,18 @@ def parse_message(entry: dict[str, Any]) -> dict[str, Any] | None:
     safe_raw = match.group(1)
     if safe_tokens:
         safe_raw += " " + " ".join(safe_tokens)
-    return {
+    record = {
         "datetime": utc_datetime(entry),
         "route": route,
         "ip": {"src": fields.get("SRC"), "dst": fields.get("DST")},
         "ports": {"src": port("SPT"), "dst": port("DPT")},
         "interfaces": {"in": fields.get("IN"), "out": fields.get("OUT")},
         "rawmessage": safe_raw[:2048],
+        "protocol": fields.get("PROTO"),
+        "tcp_flags": [token for token in message.split() if token in {"SYN", "ACK", "RST", "FIN", "PSH", "URG"}] if fields.get("PROTO") == "TCP" else [],
+        "result": "blocked",
     }
+    return record if relevant_vm_outbound(record) else None
 
 
 def rotate_files() -> None:
@@ -220,7 +261,7 @@ def guard_loop(
 def journal_lines(process_holder: list[subprocess.Popen[str]]) -> Iterable[str]:
     try:
         process = subprocess.Popen(
-            ["journalctl", "-k", "-f", "-ojson", "--no-pager"],
+            ["journalctl", "-k", "-f", "--lines=0", "-ojson", "--no-pager"],
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             text=True,
@@ -315,7 +356,7 @@ def main() -> int:
         else:
             run(args.min_free_bytes)
         return 0
-    except (CollectorError, KeyboardInterrupt) as exc:
+    except (CollectorError, KeyboardInterrupt, OSError, ValueError, subprocess.SubprocessError) as exc:
         if isinstance(exc, KeyboardInterrupt):
             return 130
         print(f"BLOCKED: {exc}", file=sys.stderr)

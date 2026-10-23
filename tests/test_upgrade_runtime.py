@@ -18,6 +18,10 @@ SPEC.loader.exec_module(upgrade)
 
 
 class UpgradeRuntimeTests(unittest.TestCase):
+    def test_packaged_runtime_matches_provenance_manifest(self):
+        _, sources = upgrade.validate_source()
+        self.assertEqual(set(sources), upgrade.RUNTIME_FILES)
+
     def setUp(self):
         self.temp = Path(tempfile.mkdtemp(dir=ROOT))
         self.root = self.temp / "vm"
@@ -75,6 +79,107 @@ class UpgradeRuntimeTests(unittest.TestCase):
         self.assertEqual(unknown.read_text(encoding="utf-8"), "keep")
         self.assertFalse(result["restarted"])
         self.assertFalse(result["network_changed"])
+
+    def test_changed_active_collector_is_restarted(self):
+        collector = Path("scripts/lib/winvm01_log_collector.py")
+        new = b"collector-new\n"
+        target = self.root / collector
+        target.write_bytes(b"collector-old\n")
+        calls = []
+
+        def fake_run(args, **kwargs):
+            calls.append(args)
+            return mock.Mock(returncode=0, stdout="active\n", stderr="")
+
+        with mock.patch.object(upgrade, "run", side_effect=fake_run):
+            self.assertTrue(upgrade.restart_collector_if_needed(self.profile, True))
+        self.assertEqual(calls, [
+            ["systemctl", "is-active", "--quiet", "winvm01-log-collector.service"],
+            ["systemctl", "restart", "winvm01-log-collector.service"],
+            ["systemctl", "is-active", "--quiet", "winvm01-log-collector.service"],
+        ])
+
+    def test_unchanged_collector_is_not_restarted(self):
+        collector = Path("scripts/lib/winvm01_log_collector.py")
+        content = b"collector-same\n"
+        target = self.root / collector
+        target.write_bytes(content)
+        with mock.patch.object(upgrade, "run") as run:
+            self.assertFalse(upgrade.restart_collector_if_needed(self.profile, False))
+        run.assert_not_called()
+
+    def test_inactive_collector_is_not_started(self):
+        collector = Path("scripts/lib/winvm01_log_collector.py")
+        content = b"collector-new\n"
+        (self.root / collector).write_bytes(b"collector-old\n")
+        with mock.patch.object(upgrade, "run", return_value=mock.Mock(returncode=3, stdout="inactive\n")) as run:
+            self.assertFalse(upgrade.restart_collector_if_needed(self.profile, True))
+        self.assertEqual(run.call_count, 1)
+
+    def test_collector_restart_failure_blocks_upgrade(self):
+        collector = Path("scripts/lib/winvm01_log_collector.py")
+        content = b"collector-new\n"
+        (self.root / collector).write_bytes(b"collector-old\n")
+        responses = [mock.Mock(returncode=0, stdout="active\n"), mock.Mock(returncode=1, stdout="")]
+        with mock.patch.object(upgrade, "run", side_effect=responses):
+            with self.assertRaisesRegex(RuntimeError, "restart failed"):
+                upgrade.restart_collector_if_needed(self.profile, True)
+
+    def test_apply_reports_collector_restart_when_rendered_content_changes(self):
+        collector = Path("scripts/lib/winvm01_log_collector.py")
+        old = b"collector-old\n"
+        new = b"collector-new\n"
+        target = self.root / collector
+        target.write_bytes(old)
+        old_hash = hashlib.sha256(old).hexdigest()
+        expected = {"start.sh": {upgrade.sha256(self.old)}, collector.as_posix(): {old_hash}}
+        with self.patch_checks(expected), \
+             mock.patch.object(upgrade, "render_runtime", return_value={
+                 Path("scripts/start.sh"): self.source.read_bytes(), collector: new}), \
+             mock.patch.object(upgrade, "installed_hashes", return_value={collector.as_posix(): old_hash}), \
+             mock.patch.object(upgrade, "run", side_effect=[
+                 mock.Mock(returncode=0, stdout="active\n"),
+                 mock.Mock(returncode=0, stdout=""),
+                 mock.Mock(returncode=0, stdout="active\n"),
+             ]):
+            result = upgrade.inspect(Path("profile.json"), apply=True,
+                                     lock_dir=Path(self.temp.name) / "lock")
+        self.assertTrue(result["collector_restarted"])
+        self.assertFalse(result["restarted"])
+        self.assertFalse(result["network_changed"])
+
+    def test_failed_restart_is_retried_when_manifest_was_not_saved(self):
+        collector = Path("scripts/lib/winvm01_log_collector.py")
+        old = b"collector-old\n"
+        new = b"collector-new\n"
+        target = self.root / collector
+        target.write_bytes(old)
+        old_hash = hashlib.sha256(old).hexdigest()
+        expected = {"start.sh": {upgrade.sha256(self.old)}, collector.as_posix(): {old_hash}}
+        rendered = {Path("scripts/start.sh"): self.source.read_bytes(), collector: new}
+        with self.patch_checks(expected), \
+             mock.patch.object(upgrade, "render_runtime", return_value=rendered), \
+             mock.patch.object(upgrade, "installed_hashes", return_value={collector.as_posix(): old_hash}), \
+             mock.patch.object(upgrade, "run", side_effect=[
+                 mock.Mock(returncode=0, stdout="active\n"),
+                 mock.Mock(returncode=1, stdout=""),
+             ]):
+            with self.assertRaisesRegex(RuntimeError, "restart failed"):
+                upgrade.inspect(Path("profile.json"), apply=True,
+                                lock_dir=Path(self.temp.name) / "lock")
+        self.assertEqual(target.read_bytes(), new)
+        responses = [
+            mock.Mock(returncode=0, stdout="active\n"),
+            mock.Mock(returncode=0, stdout=""),
+            mock.Mock(returncode=0, stdout="active\n"),
+        ]
+        with self.patch_checks(expected), \
+             mock.patch.object(upgrade, "render_runtime", return_value=rendered), \
+             mock.patch.object(upgrade, "installed_hashes", return_value={collector.as_posix(): old_hash}), \
+             mock.patch.object(upgrade, "run", side_effect=responses):
+            result = upgrade.inspect(Path("profile.json"), apply=True,
+                                     lock_dir=Path(self.temp.name) / "lock")
+        self.assertTrue(result["collector_restarted"])
 
     def test_external_edit_is_fail_closed(self):
         expected = {"start.sh": {hashlib.sha256(b"approved").hexdigest()}}

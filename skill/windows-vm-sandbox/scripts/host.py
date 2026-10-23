@@ -18,6 +18,7 @@ def main():
     parser.add_argument('--discard-data', action='store_true')
     parser.add_argument('--owner-profile', type=Path)
     parser.add_argument('--all', action='store_true', help='status: list every registered VM on the host')
+    parser.add_argument('--network-only', action='store_true', help='logs: return only VM network-block records')
     args = parser.parse_args()
     try:
         data = load(args.profile)
@@ -29,6 +30,8 @@ def main():
             raise ValueError('--owner-profile/--discard-data are valid only for reset')
         if args.all and args.action != 'status':
             raise ValueError('--all is valid only for status')
+        if args.network_only and args.action != 'logs':
+            raise ValueError('--network-only is valid only for logs')
         owner_profile = None
         if args.owner_profile:
             owner_profile = str(args.owner_profile)
@@ -44,7 +47,8 @@ def main():
         command += ['sudo', '-n', 'python3', '-'] if ssh.get('sudo', True) else ['python3', '-']
         payload = base64.b64encode(json.dumps({'profile': data, 'action': args.action, 'discard': args.discard,
                                                 'discard_data': args.discard_data, 'owner_profile': owner_profile,
-                                                'all': args.all}).encode()).decode()
+                                                'all': args.all,
+                                                'network_only': args.network_only}).encode()).decode()
         source = 'import base64,json\nREQUEST=json.loads(base64.b64decode(' + repr(payload) + '))\n'
         source += (Path(__file__).with_name('host_remote.py')).read_text(encoding='utf-8')
         completed = subprocess.run(command, input=source, text=True, capture_output=True, timeout=3800 if args.action == 'reset' else 180)
