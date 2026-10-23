@@ -44,3 +44,5 @@ WinRM 是双向请求响应通道：Windows 不能主动越过宿主的出站隔
 `enable` 将该 VM 的 `fDisableClip` 和 `fDisableCdm` 设为 0，并读回验证；禁止驱动器重定向也会阻止剪贴板传文件。`disable` 将两者设为 1。客户端 `.rdp` 还须配置 `redirectclipboard:i:1`，并同步修改生成该文件的启动器，避免下次启动覆盖。`drivestoredirect:s:` 可保持空，不自动映射本机磁盘。修改后断开并重新连接，工具不停止 RDP 服务、不强制注销会话。组策略或客户端仍可能施加其他限制，实际复制文件才是端到端验收。
 
 参考：[Microsoft 剪贴板重定向说明](https://learn.microsoft.com/en-us/azure/virtual-desktop/redirection-configure-clipboard)。
+
+用户授权重启 Windows 时使用 `guest.ps1 -Action restart -ProfilePath PROFILE.json`。该动作通过已认证 WinRM 请求正常重启，不强制关闭应用、不销毁 QEMU 进程，返回请求前的启动时间。之后轮询 `inspect`，确认 `last_boot_utc` 变化且身份正确，再检查剪贴板与 RDP；请求成功不等于重启完成。应用阻止关机时先报告，不自动强制关机。此路径保留既有 VM 内存分配；冷关机再启动仍必须通过宿主启动门槛，不能降低门槛绕过检查。

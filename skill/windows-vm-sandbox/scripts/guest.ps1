@@ -1,6 +1,6 @@
 ﻿[CmdletBinding()]
 param(
-    [Parameter(Mandatory)] [ValidateSet('inspect','run','upload','download','clipboard')] [string] $Action,
+    [Parameter(Mandatory)] [ValidateSet('inspect','run','upload','download','clipboard','restart')] [string] $Action,
     [Parameter(Mandatory)] [string] $ProfilePath,
     [string] $LocalPath,
     [string] $RemotePath,
@@ -81,6 +81,18 @@ function Invoke-Remote($Session, [scriptblock] $Script, [object[]] $RemoteArgume
 $profile = Read-Profile
 $session = $null
 try {
+    if ($Action -eq 'restart') {
+        $session = New-WinRmSession $profile
+        $result = Invoke-Remote $session {
+            param($restartReason)
+            $boot = (Get-CimInstance Win32_OperatingSystem).LastBootUpTime.ToUniversalTime().ToString('o')
+            & "$env:SystemRoot\System32\shutdown.exe" /r /t 0 /d p:0:0 /c $restartReason
+            if ($LASTEXITCODE -ne 0) { throw "Guest restart request failed: $LASTEXITCODE" }
+            [pscustomobject]@{restart_requested=$true; previous_boot_utc=$boot; force=$false}
+        } @('VirtOps: requested Windows restart')
+        $result | ConvertTo-Json -Depth 4
+        exit 0
+    }
     if ($Action -eq 'clipboard') {
         $session = New-WinRmSession $profile
         $result = Invoke-Remote $session {
@@ -127,6 +139,7 @@ try {
             computer_name = $env:COMPUTERNAME
             identity = [Security.Principal.WindowsIdentity]::GetCurrent().Name
             powershell = $PSVersionTable.PSVersion.ToString()
+            last_boot_utc = (Get-CimInstance Win32_OperatingSystem).LastBootUpTime.ToUniversalTime().ToString('o')
             winrm = (Get-Service WinRM).Status.ToString()
             c_work = Test-Path -LiteralPath 'C:\Work'
         } }
