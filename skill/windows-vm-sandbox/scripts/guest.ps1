@@ -1,10 +1,11 @@
 ﻿[CmdletBinding()]
 param(
-    [Parameter(Mandatory)] [ValidateSet('inspect','run','upload','download')] [string] $Action,
+    [Parameter(Mandatory)] [ValidateSet('inspect','run','upload','download','clipboard')] [string] $Action,
     [Parameter(Mandatory)] [string] $ProfilePath,
     [string] $LocalPath,
     [string] $RemotePath,
-    [int] $TimeoutSeconds = 300
+    [int] $TimeoutSeconds = 300,
+    [ValidateSet('inspect','enable','disable')] [string] $ClipboardMode = 'inspect'
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -80,6 +81,46 @@ function Invoke-Remote($Session, [scriptblock] $Script, [object[]] $RemoteArgume
 $profile = Read-Profile
 $session = $null
 try {
+    if ($Action -eq 'clipboard') {
+        $session = New-WinRmSession $profile
+        $result = Invoke-Remote $session {
+            param($clipboardMode)
+            $path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services'
+            $names = @('fDisableClip','fDisableCdm')
+            function Read-ClipboardPolicy {
+                $values = [ordered]@{}
+                foreach ($name in $names) {
+                    $values[$name] = Get-ItemPropertyValue -LiteralPath $path -Name $name -ErrorAction SilentlyContinue
+                }
+                [pscustomobject]$values
+            }
+            $before = Read-ClipboardPolicy
+            if ($clipboardMode -ne 'inspect') {
+                $value = if ($clipboardMode -eq 'enable') { 0 } else { 1 }
+                New-Item -Path $path -Force | Out-Null
+                foreach ($name in $names) {
+                    New-ItemProperty -LiteralPath $path -Name $name -PropertyType DWord -Value $value -Force | Out-Null
+                }
+            }
+            $after = Read-ClipboardPolicy
+            if ($clipboardMode -ne 'inspect' -and ($after.fDisableClip -ne $value -or $after.fDisableCdm -ne $value)) {
+                throw 'RDP clipboard policy readback failed'
+            }
+            $sessions = @()
+            $quser = Join-Path $env:SystemRoot 'System32\quser.exe'
+            if (Test-Path -LiteralPath $quser) { $sessions = @(& $quser 2>$null) }
+            [pscustomobject]@{
+                mode = $clipboardMode
+                before = $before
+                after = $after
+                reconnect_required = $clipboardMode -ne 'inspect'
+                sessions = $sessions
+                clipboard_processes = @(Get-Process -Name rdpclip -ErrorAction SilentlyContinue | Select-Object Id,SessionId)
+            }
+        } @($ClipboardMode)
+        $result | ConvertTo-Json -Depth 6
+        exit 0
+    }
     if ($Action -eq 'inspect') {
         $session = New-WinRmSession $profile
         $identity = Invoke-Remote $session { [pscustomobject]@{
