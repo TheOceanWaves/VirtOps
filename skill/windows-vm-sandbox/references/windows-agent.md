@@ -1,6 +1,12 @@
 
 # Windows 端操作
 
+## 用户桌面入口
+
+优先交付标准 RDP 直连：用户在 Windows“远程桌面连接”中输入 profile 的 `network.publish_ip:network.rdp_port`，使用 `windows.computer_name\windows.admin_user` 登录，也可提供不含密码的 `.rdp` 文件。先从实际客户端验证该地址的 RDP 握手；仅在批准来源网段与路由可达时使用直连。宿主地址必须带发布端口，不能假定其 3389 就是该 VM。SSH 隧道仅用于直连不可达且已有授权的情况，不能把 agent 管理脚本作为用户进入桌面的前提。直连文件保留 NLA 和服务器身份警告，不复制隧道文件的 `authentication level:i:0`。
+
+## Agent 操作入口
+
 `scripts/guest.ps1` 是控制端到 Windows 的唯一示例入口。它使用 profile 中的 `network.publish_ip`、`network.winrm_port`、`windows.computer_name`、`windows.admin_user`、`winrm_thumbprint` 和 `credentials.local_clixml`，先以 TLS 证书指纹建立 pin，再用 WinRM HTTPS + Negotiate 认证。它不会修改 `TrustedHosts`、启用 Basic、降低全局执行策略或创建新的 agent 用户。
 
 先在控制端保存 DPAPI 凭据：
